@@ -90,25 +90,67 @@ bytefile *read_file(char *fname)
 
 // Bytecode interpretation
 
-void interpret_bytecode(FILE *f, bytefile *bf)
-{
+/* Interpreter state structure */
+typedef struct {
+    /* Virtual registers */
+    char *ip;          /* address of current instruction */
+    char *sp;          /* call stack ptr */
+    char *fp;          /* current call stack frame */
 
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
-#define BYTE *ip++
-#define STRING get_string(bf, INT)
+    /* Bytecode file */
+    bytefile *bf;      /* loaded bytecode file */
+} interpreter_state_t;
+
+interpreter_state_t *create_interpreter_state(bytefile *bf, size_t stack_size) {
+    interpreter_state_t *state = malloc(sizeof(interpreter_state_t));
+    if (!state) {
+        fprintf(stderr, "Failed to allocate interpreter state\n");
+        return NULL;
+    }
+
+    /* Call stack */
+    state->sp = malloc(stack_size);
+    if (!state->sp) {
+        fprintf(stderr, "Failed to allocate call stack\n");
+        free(state);
+        return NULL;
+    }
+
+    /* Virtual registers */
+    state->ip = bf->code_ptr;           /* start at beginning of code */
+    state->fp = state->sp;              /* frame pointer at stack base */
+
+    /* Bytecode file */
+    state->bf = bf;
+
+    return state;
+}
+
+void destroy_interpreter_state(interpreter_state_t *state) {
+    if (state) {
+        free(state->sp);
+        free(state);
+    }
+}
+
+void interpret_bytecode(FILE *f, interpreter_state_t *state)
+{
+#define INT (state->ip += sizeof(int), *(int *)(state->ip - sizeof(int)))
+#define BYTE *state->ip++
+#define STRING get_string(state->bf, INT)
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
-  char *ip = bf->code_ptr;
-  char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-  char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-  char *lds[] = {"LD", "LDA", "ST"};
-  do
-  {
+    char* base_ip = state->ip;
+    char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
+    char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
+    char *lds[] = {"LD", "LDA", "ST"};
+    do
+    {
     char x = BYTE,
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
-    fprintf(f, "0x%.8lx:\t", ip - bf->code_ptr - 1);
+    fprintf(f, "0x%.8lx:\t", state->ip - base_ip - 1);
 
     switch (h)
     {
@@ -336,8 +378,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    /* Create interpreter state with 64KB stack */
+    interpreter_state_t *state = create_interpreter_state(bf, 64 * 1024);
+    if (!state) {
+        fprintf(stderr, "Failed to create interpreter state\n");
+        return 1;
+    }
+
     /* Interpret bytecode */
-    interpret_bytecode(stdout, bf);
+    interpret_bytecode(stdout, state);
+
+    /* Cleanup interpreter state */
+    destroy_interpreter_state(state);
 
     /* Cleanup */
     free(bf);
