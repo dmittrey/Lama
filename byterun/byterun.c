@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
-#include "../runtime32/runtime.h"
+#include "../runtime/runtime.h"
 
 void *__start_custom_data;
 void *__stop_custom_data;
@@ -100,7 +100,7 @@ void disassemble(FILE *f, bytefile *bf)
          h = (x & 0xF0) >> 4,
          l = x & 0x0F;
 
-    fprintf(f, "0x%.8x:\t", ip - bf->code_ptr - 1);
+    fprintf(f, "0x%.8lx:\t", ip - bf->code_ptr - 1);
 
     switch (h)
     {
