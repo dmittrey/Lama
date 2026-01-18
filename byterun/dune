@@ -28,4 +28,4 @@
  (enabled_if
   (= %{ocaml-config:system} macosx))
  (action
-  (write-file %{target} "-arch\nx86_64\n-ld_classic")))
+  (write-file %{target} "-arch\nx86_64")))
