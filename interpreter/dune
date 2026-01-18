@@ -2,6 +2,6 @@
  (target interpreter)
  (mode
   (promote (until-clean)))
- (deps Makefile interpreter.c ../runtime/runtime.a)
+ (deps Makefile main.c interpreter.c interpreter.h bytecode.c bytecode.h state.c state.h ../runtime/runtime.a)
  (action
   (run make)))

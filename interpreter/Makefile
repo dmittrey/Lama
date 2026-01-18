@@ -11,12 +11,19 @@ DISABLE_WARNINGS=-Wno-shift-negative-value
 COMMON_FLAGS=$(DISABLE_WARNINGS) -g -fstack-protector-all $(ARCH) --std=c11 -I../runtime
 PROD_FLAGS=$(COMMON_FLAGS) -DLAMA_ENV
 
-all: interpreter
+all: interpreter.o bytecode.o state.o
+	$(CC) $(PROD_FLAGS) -o interpreter main.c ../runtime/runtime.a interpreter.o bytecode.o state.o
 
-interpreter: iter_sm.c ../runtime/runtime.a
-	$(CC) $(PROD_FLAGS) -o interpreter interpreter.c ../runtime/runtime.a
+interpreter.o: interpreter.c interpreter.h
+	$(CC) $(PROD_FLAGS) -c interpreter.c -o interpreter.o
+
+bytecode.o: bytecode.c bytecode.h
+	$(CC) $(PROD_FLAGS) -c bytecode.c -o bytecode.o
+
+state.o: state.c state.h
+	$(CC) $(PROD_FLAGS) -c state.c -o state.o
 
 clean:
-	$(RM) interpreter interpreter.out *~
+	$(RM) interpreter *.o *~
 
 .PHONY: all clean

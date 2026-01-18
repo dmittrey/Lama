@@ -1,0 +1,7 @@
+(rule
+ (target iter_sm)
+ (mode
+  (promote (until-clean)))
+ (deps Makefile iter_sm.c ../runtime/runtime.a)
+ (action
+  (run make)))
