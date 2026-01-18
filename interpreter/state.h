@@ -4,6 +4,8 @@
 #include <stddef.h>
 
 #include "bytecode.h"
+#include "callstack.h"
+#include "opstack.h"
 
 /* Interpreter state structure */
 typedef struct {
@@ -11,6 +13,12 @@ typedef struct {
     char *ip;          /* address of current instruction */
     char *sp;          /* call stack ptr */
     char *fp;          /* current call stack frame */
+
+    /* Call stack */
+    callstack_t *callstack;
+
+    /* Operands stack */
+    opstack_t *opstack;
 
     /* Bytecode file */
     bytefile *bf;      /* loaded bytecode file */
