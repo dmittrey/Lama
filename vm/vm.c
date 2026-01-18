@@ -1,114 +1,13 @@
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "../runtime/runtime.h"
 
-/* Decode .bc file */
+#include "bytecode.h"
+#include "state.h"
+#include "vm.h"
 
-/* The unpacked representation of bytecode file */
-typedef struct {
-  char *string_ptr;     /* A pointer to the beginning of the string table */
-  int *public_ptr;      /* A pointer to the beginning of publics table    */
-  char *code_ptr;       /* A pointer to the bytecode itself               */
-  int *global_ptr;      /* A pointer to the global area                   */
-  int stringtab_size;   /* The size (in bytes) of the string table        */
-  int global_area_size; /* The size (in words) of global area             */
-  int public_symbols_number; /* The number of public symbols */
-  char buffer[0];
-} bytefile;
-
-/* Gets a string from a string table by an index */
-char *get_string(bytefile *f, int pos) { return &f->string_ptr[pos]; }
-
-/* Gets a name for a public symbol */
-char *get_public_name(bytefile *f, int i) {
-  return get_string(f, f->public_ptr[i * 2]);
-}
-
-/* Gets an offset for a public symbol */
-int get_public_offset(bytefile *f, int i) { return f->public_ptr[i * 2 + 1]; }
-
-/* Reads a binary bytecode file by name and unpacks it */
-bytefile *read_file(char *fname) {
-  FILE *f = fopen(fname, "rb");
-  long size;
-  bytefile *file;
-
-  if (f == 0) {
-    fprintf(stderr, "Cannot open file: %s\n", fname);
-    return NULL;
-  }
-
-  if (fseek(f, 0, SEEK_END) == -1) {
-    fprintf(stderr, "Failed to seek file\n");
-    fclose(f);
-    return NULL;
-  }
-
-  file = (bytefile *)malloc(sizeof(int) * 4 + (size = ftell(f)));
-
-  if (file == 0) {
-    fprintf(stderr, "Memory allocation failed\n");
-    fclose(f);
-    return NULL;
-  }
-
-  rewind(f);
-
-  if (size != fread(&file->stringtab_size, 1, size, f)) {
-    fprintf(stderr, "Failed to read file\n");
-    free(file);
-    fclose(f);
-    return NULL;
-  }
-
-  fclose(f);
-
-  file->string_ptr =
-      &file->buffer[file->public_symbols_number * 2 * sizeof(int)];
-  file->public_ptr = (int *)file->buffer;
-  file->code_ptr = &file->string_ptr[file->stringtab_size];
-  file->global_ptr = (int *)malloc(file->global_area_size * sizeof(int));
-
-  return file;
-}
-
-// Bytecode interpretation
-
-/* Interpreter state structure */
-typedef struct {
-  /* Virtual registers */
-  char *ip; /* address of current instruction */
-
-  /* Bytecode file */
-  bytefile *bf; /* loaded bytecode file */
-} interpreter_state_t;
-
-interpreter_state_t *create_interpreter_state(bytefile *bf, size_t stack_size) {
-  interpreter_state_t *state = malloc(sizeof(interpreter_state_t));
-  if (!state) {
-    fprintf(stderr, "Failed to allocate interpreter state\n");
-    return NULL;
-  }
-
-  /* Virtual registers */
-  state->ip = bf->code_ptr; /* start at beginning of code */
-
-  /* Bytecode file */
-  state->bf = bf;
-
-  return state;
-}
-
-void destroy_interpreter_state(interpreter_state_t *state) {
-  if (state) {
-    free(state);
-  }
-}
-
-void interpret_bytecode(FILE *f, interpreter_state_t *state) {
+void interpret_bc(FILE *f, interpreter_state_t *state) {
 #define INT (state->ip += sizeof(int), *(int *)(state->ip - sizeof(int)))
 #define BYTE *state->ip++
 #define STRING get_string(state->bf, INT)
@@ -327,35 +226,4 @@ void interpret_bytecode(FILE *f, interpreter_state_t *state) {
   } while (1);
 stop:
   fprintf(f, "<end>\n");
-}
-
-int main(int argc, char *argv[]) {
-  if (argc < 2) {
-    fprintf(stderr, "Usage: %s <bytecode_file>\n", argv[0]);
-    return 1;
-  }
-
-  /* Load bytecode */
-  bytefile *bf = read_file(argv[1]);
-  if (!bf) {
-    return 1;
-  }
-
-  /* Create interpreter state with 64KB stack */
-  interpreter_state_t *state = create_interpreter_state(bf, 64 * 1024);
-  if (!state) {
-    fprintf(stderr, "Failed to create interpreter state\n");
-    return 1;
-  }
-
-  /* Interpret bytecode */
-  interpret_bytecode(stdout, state);
-
-  /* Cleanup interpreter state */
-  destroy_interpreter_state(state);
-
-  /* Cleanup */
-  free(bf);
-
-  return 0;
 }
