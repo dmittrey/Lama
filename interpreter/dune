@@ -1,0 +1,7 @@
+(rule
+ (target interpreter)
+ (mode
+  (promote (until-clean)))
+ (deps Makefile interpreter.c ../runtime/runtime.a)
+ (action
+  (run make)))

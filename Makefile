@@ -10,7 +10,7 @@ BUILDDIR = _build
 all: build test
 
 build:
-	dune b src runtime stdlib tutorial
+	dune b src runtime stdlib tutorial iterative-sm
 
 install: all
 	dune b @install --profile=release
