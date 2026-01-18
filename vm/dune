@@ -1,0 +1,15 @@
+(rule
+ (target vm)
+ (mode
+  (promote (until-clean)))
+ (deps Makefile vm.c ../runtime/runtime.a)
+ (action
+  (run make)))
+
+(rule
+ (target vm-allsan)
+ (mode
+  (promote (until-clean)))
+ (deps Makefile vm.c ../runtime/runtime.a)
+ (action
+  (run make vm-allsan)))
