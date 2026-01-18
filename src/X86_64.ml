@@ -1497,7 +1497,7 @@ let build cmd prog =
   in
   let compiler_flags, linker_flags =
     match cmd#target_os with
-    | Darwin -> ("-arch x86_64 -Wa,--noexecstack", "-ld_classic")
+    | Darwin -> ("-arch x86_64 -Wa,--noexecstack", "")
     | Linux -> ("-Wa,--noexecstack", "")
   in
   let debug_flags = if cmd#is_debug then "-g" else "" in
