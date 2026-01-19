@@ -4,22 +4,23 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define CALLSTACK_INITIAL_SIZE 64
-#define CALLSTACK_MAX_SIZE     1024
+/* Opaque */
+struct callstack_t;
 
-/* Call frame structure */
-typedef struct {
+/* Lifecycle */
+struct callstack_t* create_callstack();
+void destroy_callstack(struct callstack_t*);
 
-} call_frame_t;
+/* Frame operations */
+void callstack_push_frame(struct callstack_t *stack, uint32_t nlocals);
+void callstack_pop_frame(struct callstack_t *stack);
 
-typedef struct {
-    call_frame_t *frames;  /* call frames */
-    size_t size;          /* current number of frames */
-    size_t capacity;      /* allocated capacity */
-} callstack_t;
+/* Access arguments and locals */
+int32_t callstack_get_local(struct callstack_t *stack, uint32_t index);
+void callstack_set_local(struct callstack_t *stack, uint32_t index, int32_t value);
 
-callstack_t* create_callstack();
-
-void destroy_callstack(callstack_t*);
+/* Operands stack */
+int32_t callstack_pop_operand(struct callstack_t *stack);
+void callstack_push_operand(struct callstack_t *stack, int32_t value);
 
 #endif

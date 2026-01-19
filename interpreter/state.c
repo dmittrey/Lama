@@ -18,17 +18,8 @@ interpreter_state_t *create_interpreter_state(bytefile *bf, size_t stack_size) {
         return NULL;
     }
 
-    /* Create operand stack */
-    state->opstack = create_opstack();
-    if (!state->opstack) {
-        fprintf(stderr, "Failed to create operand stack\n");
-        destroy_callstack(state->callstack);
-        free(state);
-        return NULL;
-    }
-
     /* Virtual registers */
-    state->ip = bf->code_ptr;           /* start at beginning of code */
+    state->ip = bf->code_ptr;           /* address of current instruction */
 
     /* Memory areas */
     state->num_globals = bf->global_area_size;
@@ -36,7 +27,6 @@ interpreter_state_t *create_interpreter_state(bytefile *bf, size_t stack_size) {
         state->globals = calloc(state->num_globals, sizeof(int32_t));
         if (!state->globals) {
             fprintf(stderr, "Failed to allocate global variables\n");
-            destroy_opstack(state->opstack);
             destroy_callstack(state->callstack);
             free(state);
             return NULL;
@@ -55,9 +45,6 @@ void destroy_interpreter_state(interpreter_state_t *state) {
     if (state) {
         if (state->callstack) {
             destroy_callstack(state->callstack);
-        }
-        if (state->opstack) {
-            destroy_opstack(state->opstack);
         }
         if (state->globals) {
             free(state->globals);

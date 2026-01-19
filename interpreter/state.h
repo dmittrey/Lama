@@ -11,18 +11,13 @@
 typedef struct {
     /* Virtual registers */
     char *ip;          /* address of current instruction */
-    char *sp;          /* call stack ptr */
-    char *fp;          /* current call stack frame */
 
     /* Memory areas */
     int32_t *globals;     /* global variables array */
     size_t num_globals;   /* number of global variables */
 
-    /* Call stack */
-    callstack_t *callstack;
-
-    /* Operands stack */
-    opstack_t *opstack;
+    /* Call stack opaque */
+    struct callstack_t *callstack;
 
     /* Bytecode file */
     bytefile *bf;      /* loaded bytecode file */
