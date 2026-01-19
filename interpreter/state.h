@@ -14,6 +14,10 @@ typedef struct {
     char *sp;          /* call stack ptr */
     char *fp;          /* current call stack frame */
 
+    /* Memory areas */
+    int32_t *globals;     /* global variables array */
+    size_t num_globals;   /* number of global variables */
+
     /* Call stack */
     callstack_t *callstack;
 
