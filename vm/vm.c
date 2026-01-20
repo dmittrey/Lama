@@ -188,7 +188,11 @@ static error_code_e op_drop(FILE *f, struct interpreter_state_t *state,
 }
 
 static error_code_e op_dup(FILE *f, struct interpreter_state_t *state, char l) {
+  csval_t value;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &value));
   DBG("DUP");
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), value));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), value));
   return ERROR_NONE;
 }
 
