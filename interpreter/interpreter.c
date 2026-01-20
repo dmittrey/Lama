@@ -100,8 +100,13 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         fprintf(f, "STA");
         break;
 
-      case 5:
-        fprintf(f, "JMP\t0x%.8x", INT);
+      case 5: /* JMP */
+        {
+          int32_t offset = INT;
+
+          fprintf(f, "JMP\t0x%.8x", offset);
+          state->ip = base_ip + offset;
+        }
         break;
 
       case 6:
@@ -112,8 +117,9 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         fprintf(f, "RET");
         break;
 
-      case 8:
+      case 8: /* DROP */
         fprintf(f, "DROP");
+        callstack_pop_operand(state->callstack);
         break;
 
       case 9:
