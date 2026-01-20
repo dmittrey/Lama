@@ -298,7 +298,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
           int nlocals = INT;
           
           fprintf(f, "BEGIN\t%d\t%d", nargs, nlocals);
-          callstack_push_frame(state->callstack, nlocals);
+          callstack_push_frame(state->callstack, nargs, nlocals);
         }
         break;
 

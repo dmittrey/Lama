@@ -12,12 +12,14 @@ struct callstack_t* create_callstack();
 void destroy_callstack(struct callstack_t*);
 
 /* Frame operations */
-void callstack_push_frame(struct callstack_t *stack, uint32_t nlocals);
+void callstack_push_frame(struct callstack_t *stack, uint32_t nargs, uint32_t nlocals);
 void callstack_pop_frame(struct callstack_t *stack);
 
 /* Access arguments and locals */
 int32_t callstack_get_local(struct callstack_t *stack, uint32_t index);
 void callstack_set_local(struct callstack_t *stack, uint32_t index, int32_t value);
+int32_t callstack_get_arg(struct callstack_t *stack, uint32_t index);
+void callstack_set_arg(struct callstack_t *stack, uint32_t index, int32_t value);
 
 /* Operands stack */
 int32_t callstack_pop_operand(struct callstack_t *stack);
