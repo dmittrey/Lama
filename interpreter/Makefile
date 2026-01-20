@@ -8,11 +8,11 @@ else ifeq ($(UNAME_S),Darwin)
 endif
 
 DISABLE_WARNINGS=-Wno-shift-negative-value
-COMMON_FLAGS=$(DISABLE_WARNINGS) -g -fstack-protector-all $(ARCH) --std=c11 -I../runtime
+COMMON_FLAGS=$(DISABLE_WARNINGS) -g -O0 -fstack-protector-all -fno-omit-frame-pointer -fsanitize=address,undefined $(ARCH) --std=c11 -I../runtime
 PROD_FLAGS=$(COMMON_FLAGS) -DLAMA_ENV
 
-all: interpreter.o bytecode.o state.o callstack.o opstack.o
-	$(CC) $(PROD_FLAGS) -o interpreter main.c ../runtime/runtime.a interpreter.o bytecode.o state.o callstack.o opstack.o
+all: interpreter.o bytecode.o state.o callstack.o
+	$(CC) $(PROD_FLAGS) -o interpreter main.c ../runtime/runtime.a interpreter.o bytecode.o state.o callstack.o
 
 interpreter.o: interpreter.c interpreter.h
 	$(CC) $(PROD_FLAGS) -c interpreter.c -o interpreter.o
