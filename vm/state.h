@@ -7,6 +7,7 @@
 #include "../runtime/runtime.h"
 
 #include "bytecode.h"
+#include "callstack.h"
 #include "error.h"
 
 /* Opaque */

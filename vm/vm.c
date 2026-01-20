@@ -13,6 +13,20 @@
 #define DBG(...) ((void)0)
 #endif
 
+extern aint Ls__Infix_3333(void *p, void *q); /* !! */
+extern aint Ls__Infix_3361(void *p, void *q); /* != */
+extern aint Ls__Infix_3838(void *p, void *q); /* && */
+extern aint Ls__Infix_37(void *p, void *q);   /* %  */
+extern aint Ls__Infix_42(void *p, void *q);   /* *  */
+extern aint Ls__Infix_43(void *p, void *q);   /* +  */
+extern aint Ls__Infix_45(void *p, void *q);   /* -  */
+extern aint Ls__Infix_47(void *p, void *q);   /* /  */
+extern aint Ls__Infix_60(void *p, void *q);   /* <  */
+extern aint Ls__Infix_6061(void *p, void *q); /* <= */
+extern aint Ls__Infix_6161(void *p, void *q); /* == */
+extern aint Ls__Infix_62(void *p, void *q);   /* >  */
+extern aint Ls__Infix_6261(void *p, void *q); /* >= */
+
 static char current_h = 0;
 
 typedef error_code_e (*op_handler)(FILE *f, struct interpreter_state_t *state,
@@ -23,6 +37,18 @@ static const char *ops[] = {
 static const char *pats[] = {"=str", "#string", "#array", "#sexp",
                              "#ref", "#val",    "#fun"};
 static const char *lds[] = {"LD", "LDA", "ST"};
+
+static inline csval_t csval_from_aint(aint v) {
+  return UNBOXED(v) ? csval_imm(v) : csval_extern(v);
+}
+
+static inline error_code_e csval_to_aint_checked(csval_t v, aint *out) {
+  if (v.ty == CS_INTERNAL_REF) {
+    return ERROR_NOT_BOXED;
+  }
+  *out = v.val;
+  return ERROR_NONE;
+}
 
 static error_code_e op_invalid(FILE *f, struct interpreter_state_t *state,
                                char l) {
@@ -35,94 +61,71 @@ static error_code_e op_stop(FILE *f, struct interpreter_state_t *state,
   return ERROR_STOP;
 }
 
-static error_code_e op_binop_add(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *op_name = ops[0];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
+static error_code_e op_binop(FILE *f, struct interpreter_state_t *state,
+                             char l) {
+  if (l == 0 || l > (char)(sizeof(ops) / sizeof(ops[0]))) {
+    return op_invalid(f, state, l);
+  }
 
-static error_code_e op_binop_sub(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *op_name = ops[1];
+  const char *op_name = ops[l - 1];
   DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
 
-static error_code_e op_binop_mul(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *op_name = ops[2];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
+  csval_t a_val, b_val;
+  aint a, b;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &b_val));
+  RETURN_IF_ERROR(csval_to_aint_checked(b_val, &b));
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &a_val));
+  RETURN_IF_ERROR(csval_to_aint_checked(a_val, &a));
+  aint result = 0;
 
-static error_code_e op_binop_div(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *op_name = ops[3];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
+  switch (l) {
+  case 1:
+    result = Ls__Infix_43((void *)a, (void *)b);
+    break; /* + */
+  case 2:
+    result = Ls__Infix_45((void *)a, (void *)b);
+    break; /* - */
+  case 3:
+    result = Ls__Infix_42((void *)a, (void *)b);
+    break; /* * */
+  case 4:
+    result = Ls__Infix_47((void *)a, (void *)b);
+    break; /* / */
+  case 5:
+    result = Ls__Infix_37((void *)a, (void *)b);
+    break; /* % */
+  case 6:
+    result = Ls__Infix_60((void *)a, (void *)b);
+    break; /* < */
+  case 7:
+    result = Ls__Infix_6061((void *)a, (void *)b);
+    break; /* <= */
+  case 8:
+    result = Ls__Infix_62((void *)a, (void *)b);
+    break; /* > */
+  case 9:
+    result = Ls__Infix_6261((void *)a, (void *)b);
+    break; /* >= */
+  case 10:
+    result = Ls__Infix_6161((void *)a, (void *)b);
+    break; /* == */
+  case 11:
+    result = Ls__Infix_3361((void *)a, (void *)b);
+    break; /* != */
+  case 12:
+    result = Ls__Infix_3838((void *)a, (void *)b);
+    break; /* && */
+  case 13:
+    result = Ls__Infix_3333((void *)a, (void *)b);
+    break; /* !! */
+  default:
+    return op_invalid(f, state, l);
+  }
 
-static error_code_e op_binop_mod(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *op_name = ops[4];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
-
-static error_code_e op_binop_lt(FILE *f, struct interpreter_state_t *state,
-                                char l) {
-  const char *op_name = ops[5];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
-
-static error_code_e op_binop_lte(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *op_name = ops[6];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
-
-static error_code_e op_binop_gt(FILE *f, struct interpreter_state_t *state,
-                                char l) {
-  const char *op_name = ops[7];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
-
-static error_code_e op_binop_gte(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *op_name = ops[8];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
-
-static error_code_e op_binop_eq(FILE *f, struct interpreter_state_t *state,
-                                char l) {
-  const char *op_name = ops[9];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
-
-static error_code_e op_binop_neq(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *op_name = ops[10];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
-
-static error_code_e op_binop_and(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *op_name = ops[11];
-  DBG("BINOP\t%s", op_name);
-  return ERROR_NONE;
-}
-
-static error_code_e op_binop_or(FILE *f, struct interpreter_state_t *state,
-                                char l) {
-  const char *op_name = ops[12];
-  DBG("BINOP\t%s", op_name);
+  DBG("%" PRIdAI " %s %" PRIdAI " = %" PRIdAI, UNBOX(a), op_name, UNBOX(b),
+      UNBOX(result));
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_from_aint(result)));
   return ERROR_NONE;
 }
 
@@ -493,19 +496,9 @@ static void init_handlers(op_handler handlers[16][16]) {
     handlers[15][j] = op_stop;
   }
 
-  handlers[0][1] = &op_binop_add;
-  handlers[0][2] = &op_binop_sub;
-  handlers[0][3] = &op_binop_mul;
-  handlers[0][4] = &op_binop_div;
-  handlers[0][5] = &op_binop_mod;
-  handlers[0][6] = &op_binop_lt;
-  handlers[0][7] = &op_binop_lte;
-  handlers[0][8] = &op_binop_gt;
-  handlers[0][9] = &op_binop_gte;
-  handlers[0][10] = &op_binop_eq;
-  handlers[0][11] = &op_binop_neq;
-  handlers[0][12] = &op_binop_and;
-  handlers[0][13] = &op_binop_or;
+  for (int j = 0; j < (int)(sizeof(ops) / sizeof(ops[0])); j++) {
+    handlers[0][j] = &op_binop;
+  }
 
   handlers[1][0] = &op_const;
   handlers[1][1] = &op_string;
