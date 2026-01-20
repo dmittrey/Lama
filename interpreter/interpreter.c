@@ -132,8 +132,15 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         }
         break;
 
-      case 10:
-        fprintf(f, "SWAP");
+      case 10: /* SWAP */
+        {
+          int32_t a = callstack_pop_operand(state->callstack);
+          int32_t b = callstack_pop_operand(state->callstack);
+
+          fprintf(f, "SWAP\t%d\t%d", a, b);
+          callstack_push_operand(state->callstack, a);
+          callstack_push_operand(state->callstack, b);
+        }
         break;
 
       case 11:
