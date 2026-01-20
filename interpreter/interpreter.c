@@ -272,9 +272,14 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         fprintf(f, "CJMPnz\t0x%.8x", INT);
         break;
 
-      case 2:
-        fprintf(f, "BEGIN\t%d ", INT);
-        fprintf(f, "%d", INT);
+      case 2: /* BEGIN */
+        {
+          int nargs = INT;
+          int nlocals = INT;
+          
+          fprintf(f, "BEGIN\t%d\t%d", nargs, nlocals);
+          callstack_push_frame(state->callstack, nlocals);
+        }
         break;
 
       case 3:
