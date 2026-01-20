@@ -242,11 +242,19 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
           callstack_push_operand(state->callstack, value); /* Push back onto stack */
         }
         break;
-      case 2:
-        fprintf(f, "A(%d)", INT);
+      case 2: /* ST A(m) */
+        {
+          /* TODO: Implement load address operations */
+          fprintf(stderr, "Implement me\n");
+          exit(1);
+        }
         break;
-      case 3:
-        fprintf(f, "C(%d)", INT);
+      case 3: /* ST C(m) */
+        {
+          /* TODO: Implement closure variables */
+          fprintf(stderr, "Closure variables not implemented yet\n");
+          exit(1);
+        }
         break;
       default:
         FAIL;
