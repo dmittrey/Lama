@@ -152,10 +152,49 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
       }
       break;
 
-    case 2:
-    case 3:
-    case 4:
-      fprintf(f, "%s\t", lds[h - 2]);
+    case 2: /* LD operations */
+      switch (l)
+      {
+      case 0: /* LD G(m) */
+        {
+          int32_t index = INT;
+          if (index >= 0 && (size_t)index < state->num_globals) {
+            fprintf(f, "LD\tG(%d)", index);
+            callstack_push_operand(state->callstack, state->globals[index]);
+          } else {
+            fprintf(stderr, "Invalid global variable index: %d\n", index);
+            exit(1);
+          }
+        }
+        break;
+      case 1: /* LD L(m) */
+        {
+          int32_t index = INT;
+          int32_t value = callstack_get_local(state->callstack, index);
+          
+          fprintf(f, "LD\tL(%d)", index);
+          callstack_push_operand(state->callstack, value);
+        }
+        break;
+      case 2: /* LD A(m) */
+        {
+          /* TODO: Implement args variables */
+          fprintf(stderr, "Args not implemented yet\n");
+          exit(1);
+        }
+        break;
+      case 3: /* LD C(m) */
+        {
+          int32_t index = INT;
+          /* TODO: Implement closure variables */
+          fprintf(stderr, "Closure variables not implemented yet\n");
+          exit(1);
+        }
+        break;
+      default:
+        FAIL;
+      }
+      break;
       switch (l)
       {
       case 0:
