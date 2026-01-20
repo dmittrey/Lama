@@ -26,9 +26,6 @@ state.o: state.c state.h
 callstack.o: callstack.c callstack.h
 	$(CC) $(PROD_FLAGS) -c callstack.c -o callstack.o
 
-opstack.o: opstack.c opstack.h
-	$(CC) $(PROD_FLAGS) -c opstack.c -o opstack.o
-
 clean:
 	$(RM) interpreter *.o *~
 
