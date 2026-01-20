@@ -42,7 +42,33 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
 
     /* BINOP */
     case 0:
-      fprintf(f, "BINOP\t%s", ops[l - 1]);
+      {
+        int32_t b = callstack_pop_operand(state->callstack);
+        int32_t a = callstack_pop_operand(state->callstack);
+        int32_t result;
+
+        switch (l) {
+          case 1: result = a + b; break;  /* + */
+          case 2: result = a - b; break;  /* - */
+          case 3: result = a * b; break;  /* * */
+          case 4: result = a / b; break;  /* / */
+          case 5: result = a % b; break;  /* % */
+          case 6: result = a < b; break;  /* < */
+          case 7: result = a <= b; break;  /* <= */
+          case 8: result = a > b; break;  /* > */
+          case 9: result = a >= b; break;  /* >= */
+          case 10: result = a == b; break;  /* == */
+          case 11: result = a != b; break;  /* != */
+          case 12: result = a && b; break;  /* && */
+          case 13: result = a || b; break;  /* !! */
+          default:
+            fprintf(stderr, "Unsupported BINOP %d\n", l);
+            exit(1);
+        }
+
+        fprintf(f, "%d %s %d = %d", a, ops[l-1], b, result);
+        callstack_push_operand(state->callstack, result);
+      }
       break;
 
     case 1:
