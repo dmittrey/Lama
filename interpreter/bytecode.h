@@ -8,10 +8,12 @@ typedef struct
   int *public_ptr;           /* A pointer to the beginning of publics table    */
   char *code_ptr;            /* A pointer to the bytecode itself               */
   int *global_ptr;           /* A pointer to the global area                   */
+
   int stringtab_size;        /* The size (in bytes) of the string table        */
   int global_area_size;      /* The size (in words) of global area             */
   int public_symbols_number; /* The number of public symbols                   */
-  char buffer[0];
+
+  char buffer[];
 } bytefile;
 
 /* Gets a string from a string table by an index */

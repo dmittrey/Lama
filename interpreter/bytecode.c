@@ -25,47 +25,74 @@ int get_public_offset(bytefile *f, int i)
 bytefile *parse_bc_file(char *fname)
 {
   FILE *f = fopen(fname, "rb");
-  long size;
-  bytefile *file;
-
-  if (f == 0)
-  {
+  if (!f) {
     fprintf(stderr, "Cannot open file: %s\n", fname);
     return NULL;
   }
 
-  if (fseek(f, 0, SEEK_END) == -1)
-  {
+  if (fseek(f, 0, SEEK_END) != 0) {
     fprintf(stderr, "Failed to seek file\n");
     fclose(f);
     return NULL;
   }
 
-  file = (bytefile *)malloc(sizeof(int) * 4 + (size = ftell(f)));
+  long end = ftell(f);
+  if (end < 0) {
+    fprintf(stderr, "Failed to tell file size\n");
+    fclose(f);
+    return NULL;
+  }
 
-  if (file == 0)
-  {
+  size_t size = (size_t)end;
+  rewind(f);
+
+  bytefile *file = (bytefile *)malloc(sizeof(bytefile) + size);
+  if (!file) {
     fprintf(stderr, "Memory allocation failed\n");
     fclose(f);
     return NULL;
   }
 
-  rewind(f);
-
-  if (size != fread(&file->stringtab_size, 1, size, f))
-  {
+  size_t rd = fread(&file->stringtab_size, 1, size, f);
+  if (rd != size) {
     fprintf(stderr, "Failed to read file\n");
     free(file);
     fclose(f);
     return NULL;
   }
-
   fclose(f);
 
-  file->string_ptr = &file->buffer[file->public_symbols_number * 2 * sizeof(int)];
+  if (size < 3u * sizeof(int)) {
+    fprintf(stderr, "Invalid bytecode: too small\n");
+    free(file);
+    return NULL;
+  }
+  if (file->stringtab_size < 0 || file->global_area_size < 0 || file->public_symbols_number < 0) {
+    fprintf(stderr, "Invalid bytecode: negative header field\n");
+    free(file);
+    return NULL;
+  }
+
+  size_t payload_bytes = size - 3u * sizeof(int); /* bytes placed into buffer[] */
+  size_t public_bytes  = (size_t)file->public_symbols_number * 2u * sizeof(int);
+  size_t string_bytes  = (size_t)file->stringtab_size;
+
+  if (public_bytes > payload_bytes || public_bytes + string_bytes > payload_bytes) {
+    fprintf(stderr, "Invalid bytecode: tables out of range\n");
+    free(file);
+    return NULL;
+  }
+
   file->public_ptr = (int *)file->buffer;
-  file->code_ptr = &file->string_ptr[file->stringtab_size];
-  file->global_ptr = (int *)malloc(file->global_area_size * sizeof(int));
+  file->string_ptr = file->buffer + public_bytes;
+  file->code_ptr   = file->string_ptr + string_bytes;
+
+  file->global_ptr = (int *)calloc((size_t)file->global_area_size, sizeof(int));
+  if (!file->global_ptr && file->global_area_size != 0) {
+    fprintf(stderr, "Failed to allocate global area\n");
+    free(file);
+    return NULL;
+  }
 
   return file;
 }
