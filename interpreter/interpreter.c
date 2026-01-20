@@ -214,13 +214,33 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         FAIL;
       }
       break;
+
+    case 4: /* ST operations */
       switch (l)
       {
-      case 0:
-        fprintf(f, "G(%d)", INT);
+      case 0: /* ST G(m) */
+        {
+          int32_t index = INT;
+          int32_t value = callstack_pop_operand(state->callstack);
+          if (index >= 0 && (size_t)index < state->num_globals) {
+            fprintf(f, "ST\tG(%d)", index);
+            state->globals[index] = value;
+            callstack_push_operand(state->callstack, value); /* Push back onto stack */
+          } else {
+            fprintf(stderr, "Invalid global variable index: %d\n", index);
+            exit(1);
+          }
+        }
         break;
-      case 1:
-        fprintf(f, "L(%d)", INT);
+      case 1: /* ST L(m) */
+        {
+          int32_t index = INT;
+          int32_t value = callstack_pop_operand(state->callstack);
+
+          fprintf(f, "ST\tL(%d)", index);
+          callstack_set_local(state->callstack, index, value);
+          callstack_push_operand(state->callstack, value); /* Push back onto stack */
+        }
         break;
       case 2:
         fprintf(f, "A(%d)", INT);
