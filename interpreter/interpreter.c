@@ -74,8 +74,13 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
     case 1:
       switch (l)
       {
-      case 0:
-        fprintf(f, "CONST\t%d", INT);
+      case 0: /* CONST */
+        {
+          int32_t value = INT;
+
+          fprintf(f, "CONST\t%d", value);
+          callstack_push_operand(state->callstack, value);
+        }
         break;
 
       case 1:
