@@ -124,9 +124,11 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         break;
 
       case 6: /* END */
+      case 7: /* RET */
         {
           fprintf(f, "END");
 
+          uint32_t callee_nargs = callstack_nargs(state->callstack);
           int32_t callee_ret = callstack_pop_operand(state->callstack);
           char *ret_ip = callstack_pop_frame(state->callstack);
 
@@ -135,21 +137,8 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
             goto stop;
           }
 
-          callstack_push_operand(state->callstack, callee_ret);
-          state->ip = ret_ip;
-        }
-        break;
-
-
-      case 7: /* RET */
-        {
-          fprintf(f, "RET");
-
-          int32_t callee_ret = callstack_pop_operand(state->callstack);
-          char *ret_ip = callstack_pop_frame(state->callstack);
-
-          if (ret_ip == NULL) {
-            exit(1); // Difference with END?
+          for (uint32_t i = 0; i < callee_nargs; i++) {
+            callstack_pop_operand(state->callstack);
           }
 
           callstack_push_operand(state->callstack, callee_ret);
@@ -325,9 +314,15 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         {
           int nargs = INT;
           int nlocals = INT;
+
+          // Main frame
+          if (callstack_nframes(state->callstack) == 0)
+            callstack_push_frame(state->callstack, NULL, nargs);
+
+          assert(nargs == callstack_nargs(state->callstack));
           
           fprintf(f, "BEGIN\t%d\t%d", nargs, nlocals);
-          callstack_push_frame(state->callstack, NULL,  nargs, nlocals);
+          callstack_alloc_locals(state->callstack, nlocals);
         }
         break;
 
@@ -378,9 +373,11 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         {
           int offset = INT;
           int nargs = INT;
-          /* TODO: Call function */
-          fprintf(stderr, "CALL instruction not implemented yet\n");
-          exit(1);
+          char *ret_ip = state->ip; 
+
+          callstack_push_frame(state->callstack, ret_ip, nargs);
+
+          state->ip = base_ip + offset;
         }
         break;
 

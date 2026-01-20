@@ -40,6 +40,10 @@ typedef struct callstack_t {
     // size_t size;             /* sp - ram_layout */
     size_t capacity;            /* allocated capacity */
 
+    /* Prevent underflow */
+    // TODO Переделать на секцию активации на дне стека чтобы при обращении можно было почистить и вернуть в pool
+    size_t nframes;
+
     /* RAM layout */
     char* ram_layout;
 } callstack_t;
@@ -115,6 +119,10 @@ static inline char* noperands_base(callstack_t *s)   { return locals_base(s) + (
 static inline uint32_t noperands(callstack_t *s)     { return load_u32(noperands_base(s)); }
 static inline char* operands_base(callstack_t *s)    { return noperands_base(s) + sizeof(uint32_t); }
 
+/* Public Helpers */
+uint32_t callstack_nargs(callstack_t *s) { return nargs(s); }
+size_t callstack_nframes(callstack_t *s) { return s->nframes; }
+
 /* Lifecycle */
 callstack_t* create_callstack()
 {
@@ -136,6 +144,7 @@ callstack_t* create_callstack()
 
     /* Internal */
     stack->capacity = CALLSTACK_INITIAL_SIZE;
+    stack->nframes = 0;
 
     return stack;
 }
@@ -149,7 +158,7 @@ void destroy_callstack(callstack_t* stack)
 }
 
 /* Frame operations */
-void callstack_push_frame(struct callstack_t *stack, char* return_addr, uint32_t nargs, uint32_t nlocals)
+void callstack_push_frame(struct callstack_t *stack, char* return_addr, uint32_t nargs)
 {
     /* Return address segment */
     PUSH(stack, (uint64_t)return_addr);
@@ -160,6 +169,12 @@ void callstack_push_frame(struct callstack_t *stack, char* return_addr, uint32_t
     /* Prolog */
     PUSH(stack, (uint64_t)stack->fp);
     stack->fp = stack->sp;
+    stack->nframes++;
+}
+void callstack_alloc_locals(struct callstack_t *stack, uint32_t nlocals)
+{
+    if (stack->nframes > 0)
+        assert(stack->fp == stack->sp);
 
     /* Locals segment */
     PUSH(stack, nlocals);
@@ -171,16 +186,10 @@ void callstack_push_frame(struct callstack_t *stack, char* return_addr, uint32_t
 }
 char* callstack_pop_frame(struct callstack_t *stack)
 {
-    uint32_t callee_nargs = nargs(stack);
-    uint32_t callee_operands = noperands(stack);
-
-    int32_t ret = 0;
-    if (callee_operands > 0)
-        ret = POP(stack, int32_t);
-
     /* Epilog */
     stack->sp = stack->fp;
     stack->fp = (char*)POP(stack, uint64_t);
+    stack->nframes--;
 
     /* Args segment */
     POP(stack, uint32_t);

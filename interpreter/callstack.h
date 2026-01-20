@@ -7,12 +7,17 @@
 /* Opaque */
 struct callstack_t;
 
+/* Helpers */
+uint32_t callstack_nargs(struct callstack_t *s);
+size_t callstack_nframes(struct callstack_t *s);
+
 /* Lifecycle */
 struct callstack_t* create_callstack();
 void destroy_callstack(struct callstack_t*);
 
 /* Frame operations */
-void callstack_push_frame(struct callstack_t *stack, char* return_addr, uint32_t nargs, uint32_t nlocals);
+void callstack_push_frame(struct callstack_t *stack, char* return_addr, uint32_t nargs);
+void callstack_alloc_locals(struct callstack_t *stack, uint32_t nlocals);
 char* callstack_pop_frame(struct callstack_t *stack);
 
 /* Access arguments and locals */
