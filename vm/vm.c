@@ -131,8 +131,10 @@ static error_code_e op_binop(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_const(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  int value = state_read_int(state);
+  int32_t value = state_read_int(state);
   DBG("CONST\t%d", value);
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_imm(BOX(value))));
   return ERROR_NONE;
 }
 
