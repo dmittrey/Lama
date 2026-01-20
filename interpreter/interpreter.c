@@ -124,10 +124,22 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         break;
 
       case 6: /* END */
-        /* Marks the end of the procedure definition. When execut- −1, +1 ed, returns the top value to the caller of this procedure. */
-        /* TODO: Implement END procedure */
-        fprintf(stderr, "END instruction not implemented yet\n");
-        exit(1);
+        {
+          fprintf(f, "END");
+
+          int32_t callee_ret = callstack_pop_operand(state->callstack);
+          char *ret_ip = callstack_pop_frame(state->callstack);
+
+          if (ret_ip == NULL) {
+            // Main frame
+            goto stop;
+          }
+
+          callstack_push_operand(state->callstack, callee_ret);
+          state->ip = ret_ip;
+        }
+        break;
+
 
       case 7: /* RET */
         /* TODO: Implement RET procedure */

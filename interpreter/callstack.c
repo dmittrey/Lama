@@ -186,18 +186,7 @@ char* callstack_pop_frame(struct callstack_t *stack)
     POP(stack, uint32_t);
 
     /* Return address segment */
-    char* caller_ip = (char*)POP(stack, uint64_t);
-
-    /* Pop nargs */
-    for (size_t i = 0; i < callee_nargs; i++)
-        callstack_pop_operand(stack);
-
-    /* Push result(if exist) */
-    if (callee_operands > 0)
-        callstack_push_operand(stack, ret);
-
-    /* Return address segment */
-    return caller_ip;
+    return (char*)POP(stack, uint64_t);
 }
 
 /* Access arguments and locals */
