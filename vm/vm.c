@@ -198,7 +198,13 @@ static error_code_e op_dup(FILE *f, struct interpreter_state_t *state, char l) {
 
 static error_code_e op_swap(FILE *f, struct interpreter_state_t *state,
                             char l) {
+  csval_t a;
+  csval_t b;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &a));
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &b));
   DBG("SWAP");
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), a));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), b));
   return ERROR_NONE;
 }
 
