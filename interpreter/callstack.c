@@ -31,7 +31,7 @@ typedef struct callstack_t {
     char* sp;   /* top */
 
     /* Internal */
-    size_t size;                /* number of active frames */
+    // size_t size;             /* sp - ram_layout */
     size_t capacity;            /* allocated capacity */
 
     /* RAM layout */
@@ -85,10 +85,6 @@ static inline int32_t cs_pop_i32(callstack_t *s) {
         int32_t:  cs_pop_i32  \
     )((S))
 
-static inline ptrdiff_t local_size(uint32_t nlocals) {
-    return sizeof(int32_t) * nlocals;
-}
-
 /* Segment base */
 static inline char* nlocals_base(callstack_t *s)    { return s->fp; }
 static inline char* locals_base(callstack_t *s)     { return nlocals_base(s) + sizeof(uint32_t); }
@@ -115,7 +111,6 @@ callstack_t* create_callstack()
     stack->sp = stack->ram_layout;
 
     /* Internal */
-    stack->size = 0;
     stack->capacity = CALLSTACK_INITIAL_SIZE;
 
     return stack;
@@ -132,13 +127,17 @@ void destroy_callstack(callstack_t* stack)
 /* Frame operations */
 void callstack_push_frame(struct callstack_t *stack, uint32_t nlocals)
 {
-    // Prolog
+    /* Prolog */
     PUSH(stack, (uint64_t)stack->fp);
     stack->fp = stack->sp;
-    stack->sp += local_size(nlocals);
-    
-    // Update stack size
-    stack->size += sizeof(uint32_t) + local_size(nlocals);
+
+    /* Locals segment */
+    PUSH(stack, nlocals);
+    for (size_t i = 0; i < nlocals; i++)
+        PUSH(stack, (uint32_t)0);
+
+    /* Operands segment */
+    PUSH(stack, (uint32_t)0); // noperands
 }
 void callstack_pop_frame(struct callstack_t *stack)
 {
@@ -146,12 +145,9 @@ void callstack_pop_frame(struct callstack_t *stack)
     char* old_sp = stack->sp;
     stack->sp = stack->fp;
     stack->fp = (char*)POP(stack, uint64_t);
-
-    // Update stack size
-    stack->size -= (ptrdiff_t)(old_sp - stack->sp);
 }
 
-
+/* Access arguments and locals */
 int32_t callstack_get_local(struct callstack_t *stack, uint32_t index)
 {
     callstack_t *s = (callstack_t *)stack;
@@ -166,7 +162,6 @@ int32_t callstack_get_local(struct callstack_t *stack, uint32_t index)
     int32_t *locals = (int32_t*)locals_base(stack);
     return locals[index];
 }
-
 void callstack_set_local(struct callstack_t *stack, uint32_t index, int32_t value)
 {
     callstack_t *s = (callstack_t *)stack;
@@ -182,13 +177,11 @@ void callstack_set_local(struct callstack_t *stack, uint32_t index, int32_t valu
     locals[index] = value;
 }
 
-// static inline char* noperands_base(callstack_t *s)  { return locals_base(s) + (sizeof(int32_t) * *nlocals_base(s)); }
-// static inline char* operands_base(callstack_t *s)   { return noperands_base(s) + sizeof(uint32_t); }
-
+/* Operands stack */
 int32_t callstack_pop_operand(struct callstack_t *stack)
 {
     uint32_t* noperands = (uint32_t *)noperands_base(stack);
-    assert(*noperands >= 0);
+    assert(*noperands > 0);
 
     if (*noperands == 0) {
         fprintf(stderr, "Operands stack underflow\n");
@@ -198,9 +191,6 @@ int32_t callstack_pop_operand(struct callstack_t *stack)
     *noperands -= 1;
     int32_t operand = POP(stack, int32_t);
 
-    // Update stack size
-    stack->size -= sizeof(int32_t);
-
     return operand;
 }
 void callstack_push_operand(struct callstack_t *stack, int32_t value)
@@ -209,7 +199,4 @@ void callstack_push_operand(struct callstack_t *stack, int32_t value)
 
     *noperands += 1;
     PUSH(stack, value);
-
-    // Update stack size
-    stack->size += sizeof(int32_t);
 }
