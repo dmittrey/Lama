@@ -198,9 +198,11 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         break;
       case 2: /* LD A(m) */
         {
-          /* TODO: Implement args variables */
-          fprintf(stderr, "Args not implemented yet\n");
-          exit(1);
+          int32_t index = INT;
+          int32_t value = callstack_get_arg(state->callstack, index);
+          
+          fprintf(f, "LD\tL(%d)", index);
+          callstack_push_operand(state->callstack, value);
         }
         break;
       case 3: /* LD C(m) */
@@ -264,9 +266,12 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         break;
       case 2: /* ST A(m) */
         {
-          /* TODO: Implement load address operations */
-          fprintf(stderr, "Implement me\n");
-          exit(1);
+          int32_t index = INT;
+          int32_t value = callstack_pop_operand(state->callstack);
+
+          fprintf(f, "ST\tA(%d)", index);
+          callstack_set_arg(state->callstack, index, value);
+          callstack_push_operand(state->callstack, value); /* Push back onto stack */
         }
         break;
       case 3: /* ST C(m) */
