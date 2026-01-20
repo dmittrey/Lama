@@ -5,11 +5,22 @@
 #include "bytecode.h"
 #include "state.h"
 
+static inline uint8_t read_u8(interpreter_state_t *st) {
+    return (uint8_t)*st->ip++;
+}
+
+static inline int32_t read_i32(interpreter_state_t *st) {
+    int32_t v;
+    memcpy(&v, st->ip, sizeof(v));
+    st->ip += sizeof(v);
+    return v;
+}
+
 void interpret_bc(FILE *f, interpreter_state_t *state)
 {
-#define INT (state->ip += sizeof(int), *(int *)(state->ip - sizeof(int)))
-#define BYTE *state->ip++
-#define STRING get_string(state->bf, INT)
+#define INT    (read_i32(state))
+#define BYTE   (read_u8(state))
+#define STRING (get_string(state->bf, INT))
 #define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
     char* base_ip = state->ip;
