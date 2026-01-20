@@ -122,8 +122,14 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         callstack_pop_operand(state->callstack);
         break;
 
-      case 9:
-        fprintf(f, "DUP");
+      case 9: /* DUP */
+        {
+          int32_t value = callstack_pop_operand(state->callstack);
+
+          fprintf(f, "DUP\t%d", value);
+          callstack_push_operand(state->callstack, value);
+          callstack_push_operand(state->callstack, value);
+        }
         break;
 
       case 10:
