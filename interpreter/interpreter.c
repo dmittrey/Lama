@@ -85,10 +85,10 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
 
       case 1: /* STRING */
         {
-          char *str = STRING;
-          /* TODO: Implement string handling */
-          fprintf(stderr, "STRING instruction not implemented yet\n");
-          exit(1);
+          int32_t str_idx = INT;
+
+          fprintf(f, "STRING IDX\t%d", str_idx);
+          callstack_push_operand(state->callstack, str_idx);
         }
         break;
 
