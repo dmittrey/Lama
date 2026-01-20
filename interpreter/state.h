@@ -5,7 +5,6 @@
 
 #include "bytecode.h"
 #include "callstack.h"
-#include "opstack.h"
 
 /* Interpreter state structure */
 typedef struct {
@@ -23,7 +22,7 @@ typedef struct {
     bytefile *bf;      /* loaded bytecode file */
 } interpreter_state_t;
 
-interpreter_state_t *create_interpreter_state(bytefile *bf, size_t stack_size);
+interpreter_state_t *create_interpreter_state(bytefile *bf);
 
 void destroy_interpreter_state(interpreter_state_t *state);
 

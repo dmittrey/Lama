@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-interpreter_state_t *create_interpreter_state(bytefile *bf, size_t stack_size) {
+interpreter_state_t *create_interpreter_state(bytefile *bf) {
     interpreter_state_t *state = malloc(sizeof(interpreter_state_t));
     if (!state) {
         fprintf(stderr, "Failed to allocate interpreter state\n");
