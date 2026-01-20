@@ -195,6 +195,25 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         FAIL;
       }
       break;
+
+    case 3: /* LDA operations - Load Address */
+      switch (l)
+      {
+      case 0: /* LDA G(m) */
+      case 1: /* LDA L(m) */
+      case 2: /* LDA A(m) */
+      case 3: /* LDA C(m) */
+        {
+          int32_t index = INT;
+          /* TODO: Implement load address operations */
+          fprintf(stderr, "Load address operations not implemented yet\n");
+          exit(1);
+        }
+        break;
+      default:
+        FAIL;
+      }
+      break;
       switch (l)
       {
       case 0:
