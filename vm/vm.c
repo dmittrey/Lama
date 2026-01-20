@@ -347,10 +347,10 @@ static error_code_e op_cjmpnz(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_begin(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  int value = state_read_int(state);
-  int offset = state_read_int(state);
-  DBG("BEGIN\t%d ", value);
-  DBG("%d", offset);
+  int nargs = state_read_int(state);
+  int nlocals = state_read_int(state);
+  DBG("BEGIN\t%d %d", nargs, nlocals);
+  RETURN_IF_ERROR(callstack_alloc_locals(state_cs(state), nlocals));
   return ERROR_NONE;
 }
 
