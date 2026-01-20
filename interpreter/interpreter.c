@@ -142,9 +142,19 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
 
 
       case 7: /* RET */
-        /* TODO: Implement RET procedure */
-        fprintf(stderr, "RET returns the top value to the caller of this procedure\n");
-        exit(1);
+        {
+          fprintf(f, "RET");
+
+          int32_t callee_ret = callstack_pop_operand(state->callstack);
+          char *ret_ip = callstack_pop_frame(state->callstack);
+
+          if (ret_ip == NULL) {
+            exit(1); // Difference with END?
+          }
+
+          callstack_push_operand(state->callstack, callee_ret);
+          state->ip = ret_ip;
+        }
         break;
 
       case 8: /* DROP */
@@ -303,10 +313,12 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
       {
       case 0:
         fprintf(f, "CJMPz\t0x%.8x", INT);
+        exit(1);
         break;
 
       case 1:
         fprintf(f, "CJMPnz\t0x%.8x", INT);
+        exit(1);
         break;
 
       case 2: /* BEGIN */
