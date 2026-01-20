@@ -83,21 +83,35 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         }
         break;
 
-      case 1:
-        fprintf(f, "STRING\t%s", STRING);
+      case 1: /* STRING */
+        {
+          char *str = STRING;
+          /* TODO: Implement string handling */
+          fprintf(stderr, "STRING instruction not implemented yet\n");
+          exit(1);
+        }
         break;
 
-      case 2:
-        fprintf(f, "SEXP\t%s ", STRING);
-        fprintf(f, "%d", INT);
+      case 2: /* SEXP */
+        {
+          char *tag = STRING;
+          int32_t arity = INT;
+          /* TODO: Implement S-expression handling */
+          fprintf(stderr, "SEXP instruction not implemented yet\n");
+          exit(1);
+        }
         break;
 
-      case 3:
-        fprintf(f, "STI");
+      case 3: /* STI */
+        /* TODO: Implement store indirect */
+        fprintf(stderr, "STI instruction not implemented yet\n");
+        exit(1);
         break;
 
-      case 4:
-        fprintf(f, "STA");
+      case 4: /* STA */
+        /* TODO: Implement store array */
+        fprintf(stderr, "STA instruction not implemented yet\n");
+        exit(1);
         break;
 
       case 5: /* JMP */
@@ -109,12 +123,16 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         }
         break;
 
-      case 6:
-        fprintf(f, "END");
-        break;
+      case 6: /* END */
+        /* Marks the end of the procedure definition. When execut- −1, +1 ed, returns the top value to the caller of this procedure. */
+        /* TODO: Implement END procedure */
+        fprintf(stderr, "END instruction not implemented yet\n");
+        exit(1);
 
-      case 7:
-        fprintf(f, "RET");
+      case 7: /* RET */
+        /* TODO: Implement RET procedure */
+        fprintf(stderr, "RET returns the top value to the caller of this procedure\n");
+        exit(1);
         break;
 
       case 8: /* DROP */
@@ -143,8 +161,10 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         }
         break;
 
-      case 11:
-        fprintf(f, "ELEM");
+      case 11: /* ELEM */
+        /* TODO: Implement array element access */
+        fprintf(stderr, "ELEM instruction not implemented yet\n");
+        exit(1);
         break;
 
       default:
@@ -282,9 +302,12 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         }
         break;
 
-      case 3:
-        fprintf(f, "CBEGIN\t%d ", INT);
-        fprintf(f, "%d", INT);
+      case 3: /* CBEGIN */
+        {
+          /* TODO: Create function frame with closure */
+          fprintf(stderr, "CBEGIN instruction not implemented yet\n");
+          exit(1);
+        }
         break;
 
       case 4:
@@ -314,31 +337,58 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
         };
         break;
 
-      case 5:
-        fprintf(f, "CALLC\t%d", INT);
+      case 5: /* CALLC */
+        {
+          /* TODO: Call closure */
+          fprintf(stderr, "CALLC instruction not implemented yet\n");
+          exit(1);
+        }
         break;
 
-      case 6:
-        fprintf(f, "CALL\t0x%.8x ", INT);
-        fprintf(f, "%d", INT);
+      case 6: /* CALL */
+        {
+          int offset = INT;
+          int nargs = INT;
+          /* TODO: Call function */
+          fprintf(stderr, "CALL instruction not implemented yet\n");
+          exit(1);
+        }
         break;
 
-      case 7:
-        fprintf(f, "TAG\t%s ", STRING);
-        fprintf(f, "%d", INT);
+      case 7: /* TAG */
+        {
+          char *tag = STRING;
+          int arity = INT;
+          /* TODO: Check S-expression tag */
+          fprintf(stderr, "TAG instruction not implemented yet\n");
+          exit(1);
+        }
         break;
 
-      case 8:
-        fprintf(f, "ARRAY\t%d", INT);
+      case 8: /* ARRAY */
+        {
+          int size = INT;
+          /* TODO: Check array size */
+          fprintf(stderr, "ARRAY instruction not implemented yet\n");
+          exit(1);
+        }
         break;
 
-      case 9:
-        fprintf(f, "FAIL\t%d", INT);
-        fprintf(f, "%d", INT);
+      case 9: /* FAIL */
+        {
+          int line = INT;
+          int col = INT;
+          /* TODO: Pattern matching failure */
+          fprintf(stderr, "Pattern matching failure at %d:%d\n", line, col);
+          exit(1);
+        }
         break;
 
-      case 10:
-        fprintf(f, "LINE\t%d", INT);
+      case 10: /* LINE */
+        {
+          int line = INT;
+          fprintf(f, "LINE\t%d", line);
+        }
         break;
 
       default:
@@ -346,32 +396,55 @@ void interpret_bc(FILE *f, interpreter_state_t *state)
       }
       break;
 
-    case 6:
-      fprintf(f, "PATT\t%s", pats[l]);
+    case 6: /* Pattern matching */
+      /* TODO: Implement pattern matching operations */
+      fprintf(stderr, "Pattern matching not implemented yet\n");
+      exit(1);
       break;
 
-    case 7:
+    case 7: /* Built-in functions */
     {
       switch (l)
       {
-      case 0:
-        fprintf(f, "CALL\tLread");
+      case 0: /* Lread */
+        {
+          int32_t value;
+          if (scanf("%d", &value) == 1) {
+            callstack_push_operand(state->callstack, value);
+          } else {
+            fprintf(stderr, "Failed to read integer\n");
+            exit(1);
+          }
+        }
         break;
 
-      case 1:
-        fprintf(f, "CALL\tLwrite");
+      case 1: /* Lwrite */
+        {
+          int32_t value = callstack_pop_operand(state->callstack);
+          printf("%d\n", value);
+          callstack_push_operand(state->callstack, value);  /* Leave value on stack */
+        }
         break;
 
-      case 2:
-        fprintf(f, "CALL\tLlength");
+      case 2: /* Llength */
+        /* TODO: Implement length */
+        fprintf(stderr, "Llength not implemented yet\n");
+        exit(1);
         break;
 
-      case 3:
-        fprintf(f, "CALL\tLstring");
+      case 3: /* Lstring */
+        /* TODO: Implement string conversion */
+        fprintf(stderr, "Lstring not implemented yet\n");
+        exit(1);
         break;
 
-      case 4:
-        fprintf(f, "CALL\tBarray\t%d", INT);
+      case 4: /* Barray */
+        {
+          int length = INT;
+          /* TODO: Create array */
+          fprintf(stderr, "Barray not implemented yet\n");
+          exit(1);
+        }
         break;
 
       default:
