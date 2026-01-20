@@ -12,8 +12,8 @@ struct callstack_t* create_callstack();
 void destroy_callstack(struct callstack_t*);
 
 /* Frame operations */
-void callstack_push_frame(struct callstack_t *stack, uint32_t nargs, uint32_t nlocals);
-void callstack_pop_frame(struct callstack_t *stack);
+void callstack_push_frame(struct callstack_t *stack, char* return_addr, uint32_t nargs, uint32_t nlocals);
+char* callstack_pop_frame(struct callstack_t *stack);
 
 /* Access arguments and locals */
 int32_t callstack_get_local(struct callstack_t *stack, uint32_t index);
