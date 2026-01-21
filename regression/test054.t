@@ -1,4 +1,4 @@
-  $ ../src/Driver.exe -runtime ../runtime -I ../stdlib/x64 -i test054.lama < test054.input
+  $ ../src/Driver.exe -runtime ../runtime -I ../stdlib/x64 -b test054.lama && ../interpreter/interpreter test054.bc < test054.input
    > 105
   105
   105
