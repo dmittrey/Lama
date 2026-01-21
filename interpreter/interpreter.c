@@ -297,15 +297,26 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
 
     case 5:
       switch (l) {
-      case 0:
-        DBG("CJMPz\t0x%.8x", INT);
-        exit(1);
-        break;
+      case 0: /* CJMPz */
+      {
+        int32_t l_offset = INT;
+        DBG("CJMPz\t0x%.8x", l_offset);
 
-      case 1:
-        DBG("CJMPnz\t0x%.8x", INT);
-        exit(1);
-        break;
+        int32_t value = callstack_pop_operand(state->callstack);
+        if (!value)
+          state->ip = base_ip + l_offset;
+      } break;
+
+      case 1: /* CJMPnz */
+      {
+        int32_t l_offset = INT;
+        DBG("CJMPnz\t0x%.8x", l_offset);
+
+        // Jump if operand non-zero
+        int32_t value = callstack_pop_operand(state->callstack);
+        if (value)
+          state->ip = base_ip + l_offset;
+      } break;
 
       case 2: /* BEGIN */
       {
