@@ -1,12 +1,12 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "callstack.h"
 
 #define CALLSTACK_INITIAL_SIZE 64
-#define CALLSTACK_MAX_SIZE     1024
+#define CALLSTACK_MAX_SIZE 1024
 
 /*
 Call frame memory layout(RAM):
@@ -32,250 +32,263 @@ Call frame memory layout(RAM):
 */
 
 typedef struct callstack_t {
-    /* Virtual regs */
-    char* fp;   /* base of locals for current frame */
-    char* sp;   /* top */
+  /* Virtual regs */
+  char *fp; /* base of locals for current frame */
+  char *sp; /* top */
 
-    /* Internal */
-    // size_t size;             /* sp - ram_layout */
-    size_t capacity;            /* allocated capacity */
+  /* Internal */
+  // size_t size;             /* sp - ram_layout */
+  size_t capacity; /* allocated capacity */
 
-    /* Prevent underflow */
-    // TODO Переделать на секцию активации на дне стека чтобы при обращении можно было почистить и вернуть в pool
-    size_t nframes;
+  /* Prevent underflow */
+  // TODO Переделать на секцию активации на дне стека чтобы при обращении можно
+  // было почистить и вернуть в pool
+  size_t nframes;
 
-    /* RAM layout */
-    char* ram_layout;
+  /* RAM layout */
+  char *ram_layout;
 } callstack_t;
 
 /* Helpers */
 static inline uint32_t load_u32(const void *p) {
-    uint32_t v; 
-    memcpy(&v, p, sizeof(v)); 
-    return v;
+  uint32_t v;
+  memcpy(&v, p, sizeof(v));
+  return v;
 }
-static inline void store_u32(void *p, uint32_t v) {
-    memcpy(p, &v, sizeof(v)); 
-}
+static inline void store_u32(void *p, uint32_t v) { memcpy(p, &v, sizeof(v)); }
 
 static inline void cs_push_u32(callstack_t *s, uint32_t v) {
-    memcpy(s->sp, &v, sizeof(v));
-    s->sp += sizeof(uint32_t);
+  memcpy(s->sp, &v, sizeof(v));
+  s->sp += sizeof(uint32_t);
 }
 static inline void cs_push_u64(callstack_t *s, uint64_t v) {
-    memcpy(s->sp, &v, sizeof(v));
-    s->sp += sizeof(uint64_t);
+  memcpy(s->sp, &v, sizeof(v));
+  s->sp += sizeof(uint64_t);
 }
 static inline void cs_push_i32(callstack_t *s, int32_t v) {
-    memcpy(s->sp, &v, sizeof(v));
-    s->sp += sizeof(int32_t);
+  memcpy(s->sp, &v, sizeof(v));
+  s->sp += sizeof(int32_t);
 }
 
-#define PUSH(S, V) \
-    _Generic((V), \
-        uint32_t: cs_push_u32, \
-        uint64_t: cs_push_u64, \
-        int32_t:  cs_push_i32  \
-    )((S), (V))
+#define PUSH(S, V)                                                             \
+  _Generic((V),                                                                \
+      uint32_t: cs_push_u32,                                                   \
+      uint64_t: cs_push_u64,                                                   \
+      int32_t: cs_push_i32)((S), (V))
 
 static inline uint32_t cs_pop_u32(callstack_t *s) {
-    uint32_t v;
-    s->sp -= sizeof(uint32_t);
-    memcpy(&v, s->sp, sizeof(v));
-    return v;
+  uint32_t v;
+  s->sp -= sizeof(uint32_t);
+  memcpy(&v, s->sp, sizeof(v));
+  return v;
 }
 static inline uint64_t cs_pop_u64(callstack_t *s) {
-    uint64_t v;
-    s->sp -= sizeof(uint64_t);
-    memcpy(&v, s->sp, sizeof(v));
-    return v;
+  uint64_t v;
+  s->sp -= sizeof(uint64_t);
+  memcpy(&v, s->sp, sizeof(v));
+  return v;
 }
 static inline int32_t cs_pop_i32(callstack_t *s) {
-    int32_t v;
-    s->sp -= sizeof(int32_t);
-    memcpy(&v, s->sp, sizeof(v));
-    return v;
+  int32_t v;
+  s->sp -= sizeof(int32_t);
+  memcpy(&v, s->sp, sizeof(v));
+  return v;
 }
 
-#define POP(S, TYPE) \
-    _Generic(((TYPE)0), \
-        uint32_t: cs_pop_u32, \
-        uint64_t: cs_pop_u64, \
-        int32_t:  cs_pop_i32  \
-    )((S))
+#define POP(S, TYPE)                                                           \
+  _Generic(((TYPE)0),                                                          \
+      uint32_t: cs_pop_u32,                                                    \
+      uint64_t: cs_pop_u64,                                                    \
+      int32_t: cs_pop_i32)((S))
 
 /* Segment base */
-static inline char* nlocals_base(callstack_t *s)     { return s->fp; }
-static inline uint32_t nlocals(callstack_t *s) { return load_u32(nlocals_base(s)); }
+static inline char *nlocals_base(callstack_t *s) { return s->fp; }
+static inline uint32_t nlocals(callstack_t *s) {
+  return load_u32(nlocals_base(s));
+}
 
-static inline char* prev_fp_off_base(callstack_t *s) { return nlocals_base(s) - sizeof(uint64_t); }
-static inline char* narguments_base(callstack_t *s)  { return prev_fp_off_base(s) - sizeof(uint32_t); }
-static inline uint32_t nargs(callstack_t *s)         { return load_u32(narguments_base(s)); }
-static inline char* ret_addr_base(callstack_t *s)    { return narguments_base(s) - sizeof(uint64_t); }
-static inline char* arguments_base(callstack_t *s)   { return ret_addr_base(s) - (size_t)nargs(s) * sizeof(int32_t); }
+static inline char *prev_fp_off_base(callstack_t *s) {
+  return nlocals_base(s) - sizeof(uint64_t);
+}
+static inline char *narguments_base(callstack_t *s) {
+  return prev_fp_off_base(s) - sizeof(uint32_t);
+}
+static inline uint32_t nargs(callstack_t *s) {
+  return load_u32(narguments_base(s));
+}
+static inline char *ret_addr_base(callstack_t *s) {
+  return narguments_base(s) - sizeof(uint64_t);
+}
+static inline char *arguments_base(callstack_t *s) {
+  return ret_addr_base(s) - (size_t)nargs(s) * sizeof(int32_t);
+}
 
-static inline char* locals_base(callstack_t *s)      { return nlocals_base(s) + sizeof(uint32_t); }
-static inline char* noperands_base(callstack_t *s)   { return locals_base(s) + (size_t)nlocals(s) * sizeof(int32_t); }
-static inline uint32_t noperands(callstack_t *s)     { return load_u32(noperands_base(s)); }
-static inline char* operands_base(callstack_t *s)    { return noperands_base(s) + sizeof(uint32_t); }
+static inline char *locals_base(callstack_t *s) {
+  return nlocals_base(s) + sizeof(uint32_t);
+}
+static inline char *noperands_base(callstack_t *s) {
+  return locals_base(s) + (size_t)nlocals(s) * sizeof(int32_t);
+}
+static inline uint32_t noperands(callstack_t *s) {
+  return load_u32(noperands_base(s));
+}
+static inline char *operands_base(callstack_t *s) {
+  return noperands_base(s) + sizeof(uint32_t);
+}
 
 /* Public Helpers */
 uint32_t callstack_nargs(callstack_t *s) { return nargs(s); }
 size_t callstack_nframes(callstack_t *s) { return s->nframes; }
 
 /* Lifecycle */
-callstack_t* create_callstack()
-{
-    callstack_t *stack = malloc(sizeof(callstack_t));
-    if (!stack) {
-        return NULL;
-    }
+callstack_t *create_callstack() {
+  callstack_t *stack = malloc(sizeof(callstack_t));
+  if (!stack) {
+    return NULL;
+  }
 
-    /* RAM layout */
-    stack->ram_layout = malloc(CALLSTACK_INITIAL_SIZE);
-    if (!stack->ram_layout) {
-        free(stack);
-        return NULL;
-    }
+  /* RAM layout */
+  stack->ram_layout = malloc(CALLSTACK_INITIAL_SIZE);
+  if (!stack->ram_layout) {
+    free(stack);
+    return NULL;
+  }
 
-    /* Virt regs */
-    stack->fp = NULL;
-    stack->sp = stack->ram_layout;
+  /* Virt regs */
+  stack->fp = NULL;
+  stack->sp = stack->ram_layout;
 
-    /* Internal */
-    stack->capacity = CALLSTACK_INITIAL_SIZE;
-    stack->nframes = 0;
+  /* Internal */
+  stack->capacity = CALLSTACK_INITIAL_SIZE;
+  stack->nframes = 0;
 
-    return stack;
+  return stack;
 }
 
-void destroy_callstack(callstack_t* stack)
-{
-    if (stack) {
-        free(stack->ram_layout);
-        free(stack);
-    }
+void destroy_callstack(callstack_t *stack) {
+  if (stack) {
+    free(stack->ram_layout);
+    free(stack);
+  }
 }
 
 /* Frame operations */
-void callstack_push_frame(struct callstack_t *stack, char* return_addr, uint32_t nargs)
-{
-    /* Return address segment */
-    PUSH(stack, (uint64_t)return_addr);
+void callstack_push_frame(struct callstack_t *stack, char *return_addr,
+                          uint32_t nargs) {
+  /* Return address segment */
+  PUSH(stack, (uint64_t)return_addr);
 
-    /* Args segment */
-    PUSH(stack, nargs);
+  /* Args segment */
+  PUSH(stack, nargs);
 
-    /* Prolog */
-    PUSH(stack, (uint64_t)stack->fp);
-    stack->fp = stack->sp;
-    stack->nframes++;
+  /* Prolog */
+  PUSH(stack, (uint64_t)stack->fp);
+  stack->fp = stack->sp;
+  stack->nframes++;
 }
-void callstack_alloc_locals(struct callstack_t *stack, uint32_t nlocals)
-{
-    if (stack->nframes > 0)
-        assert(stack->fp == stack->sp);
+void callstack_alloc_locals(struct callstack_t *stack, uint32_t nlocals) {
+  if (stack->nframes > 0)
+    assert(stack->fp == stack->sp);
 
-    /* Locals segment */
-    PUSH(stack, nlocals);
-    for (size_t i = 0; i < nlocals; i++)
-        PUSH(stack, (uint32_t)0);
+  /* Locals segment */
+  PUSH(stack, nlocals);
+  for (size_t i = 0; i < nlocals; i++)
+    PUSH(stack, (uint32_t)0);
 
-    /* Operands segment */
-    PUSH(stack, (uint32_t)0); // noperands
+  /* Operands segment */
+  PUSH(stack, (uint32_t)0); // noperands
 }
-char* callstack_pop_frame(struct callstack_t *stack)
-{
-    /* Epilog */
-    stack->sp = stack->fp;
-    stack->fp = (char*)POP(stack, uint64_t);
-    stack->nframes--;
+char *callstack_pop_frame(struct callstack_t *stack) {
+  /* Epilog */
+  stack->sp = stack->fp;
+  stack->fp = (char *)POP(stack, uint64_t);
+  stack->nframes--;
 
-    /* Args segment */
-    POP(stack, uint32_t);
+  /* Args segment */
+  POP(stack, uint32_t);
 
-    /* Return address segment */
-    return (char*)POP(stack, uint64_t);
+  /* Return address segment */
+  return (char *)POP(stack, uint64_t);
 }
 
 /* Access arguments and locals */
-int32_t callstack_get_local(struct callstack_t *stack, uint32_t index)
-{
-    callstack_t *s = (callstack_t *)stack;
-    assert(s);
+int32_t callstack_get_local(struct callstack_t *stack, uint32_t index) {
+  callstack_t *s = (callstack_t *)stack;
+  assert(s);
 
-    uint32_t nlocals_ = nlocals(s);
-    if (index >= nlocals_) {
-        fprintf(stderr, "Invalid local access: index %u, nlocals %u\n", index, nlocals_);
-        exit(1);
-    }
+  uint32_t nlocals_ = nlocals(s);
+  if (index >= nlocals_) {
+    fprintf(stderr, "Invalid local access: index %u, nlocals %u\n", index,
+            nlocals_);
+    exit(1);
+  }
 
-    int32_t *locals = (int32_t*)locals_base(stack);
-    return locals[index];
+  int32_t *locals = (int32_t *)locals_base(stack);
+  return locals[index];
 }
-void callstack_set_local(struct callstack_t *stack, uint32_t index, int32_t value)
-{
-    callstack_t *s = (callstack_t *)stack;
-    assert(s);
+void callstack_set_local(struct callstack_t *stack, uint32_t index,
+                         int32_t value) {
+  callstack_t *s = (callstack_t *)stack;
+  assert(s);
 
-    uint32_t nlocals_ = nlocals(s);
-    if (index >= nlocals_) {
-        fprintf(stderr, "Invalid local access: index %u, nlocals %u\n", index, nlocals_);
-        exit(1);
-    }
+  uint32_t nlocals_ = nlocals(s);
+  if (index >= nlocals_) {
+    fprintf(stderr, "Invalid local access: index %u, nlocals %u\n", index,
+            nlocals_);
+    exit(1);
+  }
 
-    int32_t *locals = (int32_t *)locals_base(stack);
-    locals[index] = value;
+  int32_t *locals = (int32_t *)locals_base(stack);
+  locals[index] = value;
 }
-int32_t callstack_get_arg(struct callstack_t *stack, uint32_t index)
-{
-    callstack_t *s = (callstack_t *)stack;
-    assert(s);
+int32_t callstack_get_arg(struct callstack_t *stack, uint32_t index) {
+  callstack_t *s = (callstack_t *)stack;
+  assert(s);
 
-    uint32_t nargs_ = nargs(s);
-    if (index >= nargs_) {
-        fprintf(stderr, "Invalid argument access: index %u, nargs %u\n", index, nargs_);
-        exit(1);
-    }
+  uint32_t nargs_ = nargs(s);
+  if (index >= nargs_) {
+    fprintf(stderr, "Invalid argument access: index %u, nargs %u\n", index,
+            nargs_);
+    exit(1);
+  }
 
-    int32_t *args = (int32_t*)arguments_base(stack);
-    return args[index];
+  int32_t *args = (int32_t *)arguments_base(stack);
+  return args[index];
 }
-void callstack_set_arg(struct callstack_t *stack, uint32_t index, int32_t value)
-{
-    callstack_t *s = (callstack_t *)stack;
-    assert(s);
+void callstack_set_arg(struct callstack_t *stack, uint32_t index,
+                       int32_t value) {
+  callstack_t *s = (callstack_t *)stack;
+  assert(s);
 
-    uint32_t nargs_ = nargs(s);
-    if (index >= nargs_) {
-        fprintf(stderr, "Invalid local access: index %u, nargs %u\n", index, nargs_);
-        exit(1);
-    }
+  uint32_t nargs_ = nargs(s);
+  if (index >= nargs_) {
+    fprintf(stderr, "Invalid local access: index %u, nargs %u\n", index,
+            nargs_);
+    exit(1);
+  }
 
-    int32_t *args = (int32_t *)arguments_base(stack);
-    args[index] = value;
+  int32_t *args = (int32_t *)arguments_base(stack);
+  args[index] = value;
 }
 
 /* Operands stack */
-int32_t callstack_pop_operand(struct callstack_t *stack)
-{
-    uint32_t noperands_ = noperands(stack);
-    assert(noperands_ > 0);
+int32_t callstack_pop_operand(struct callstack_t *stack) {
+  uint32_t noperands_ = noperands(stack);
+  assert(noperands_ > 0);
 
-    if (noperands_ == 0) {
-        fprintf(stderr, "Operands stack underflow\n");
-        exit(1);
-    }
+  if (noperands_ == 0) {
+    fprintf(stderr, "Operands stack underflow\n");
+    exit(1);
+  }
 
-    store_u32(noperands_base(stack), noperands_ - 1);
-    int32_t operand = POP(stack, int32_t);
+  store_u32(noperands_base(stack), noperands_ - 1);
+  int32_t operand = POP(stack, int32_t);
 
-    return operand;
+  return operand;
 }
-void callstack_push_operand(struct callstack_t *stack, int32_t value)
-{
-    uint32_t noperands_ = noperands(stack);
+void callstack_push_operand(struct callstack_t *stack, int32_t value) {
+  uint32_t noperands_ = noperands(stack);
 
-    store_u32(noperands_base(stack), noperands_ + 1);
-    PUSH(stack, value);
+  store_u32(noperands_base(stack), noperands_ + 1);
+  PUSH(stack, value);
 }

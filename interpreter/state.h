@@ -8,18 +8,18 @@
 
 /* Interpreter state structure */
 typedef struct {
-    /* Virtual registers */
-    char *ip;          /* address of current instruction */
+  /* Virtual registers */
+  char *ip; /* address of current instruction */
 
-    /* Memory areas */
-    int32_t *globals;     /* global variables array */
-    size_t num_globals;   /* number of global variables */
+  /* Memory areas */
+  int32_t *globals;   /* global variables array */
+  size_t num_globals; /* number of global variables */
 
-    /* Call stack opaque */
-    struct callstack_t *callstack;
+  /* Call stack opaque */
+  struct callstack_t *callstack;
 
-    /* Bytecode file */
-    bytefile *bf;      /* loaded bytecode file */
+  /* Bytecode file */
+  bytefile *bf; /* loaded bytecode file */
 } interpreter_state_t;
 
 interpreter_state_t *create_interpreter_state(bytefile *bf);
@@ -27,4 +27,3 @@ interpreter_state_t *create_interpreter_state(bytefile *bf);
 void destroy_interpreter_state(interpreter_state_t *state);
 
 #endif
-

@@ -4,26 +4,18 @@
 #include "bytecode.h"
 
 /* Gets a string from a string table by an index */
-char *get_string(bytefile *f, int pos)
-{
-  return &f->string_ptr[pos];
-}
+char *get_string(bytefile *f, int pos) { return &f->string_ptr[pos]; }
 
 /* Gets a name for a public symbol */
-char *get_public_name(bytefile *f, int i)
-{
+char *get_public_name(bytefile *f, int i) {
   return get_string(f, f->public_ptr[i * 2]);
 }
 
 /* Gets an offset for a public symbol */
-int get_public_offset(bytefile *f, int i)
-{
-  return f->public_ptr[i * 2 + 1];
-}
+int get_public_offset(bytefile *f, int i) { return f->public_ptr[i * 2 + 1]; }
 
 /* Reads a binary bytecode file by name and unpacks it */
-bytefile *parse_bc_file(char *fname)
-{
+bytefile *parse_bc_file(char *fname) {
   FILE *f = fopen(fname, "rb");
   if (!f) {
     fprintf(stderr, "Cannot open file: %s\n", fname);
@@ -67,17 +59,20 @@ bytefile *parse_bc_file(char *fname)
     free(file);
     return NULL;
   }
-  if (file->stringtab_size < 0 || file->global_area_size < 0 || file->public_symbols_number < 0) {
+  if (file->stringtab_size < 0 || file->global_area_size < 0 ||
+      file->public_symbols_number < 0) {
     fprintf(stderr, "Invalid bytecode: negative header field\n");
     free(file);
     return NULL;
   }
 
-  size_t payload_bytes = size - 3u * sizeof(int); /* bytes placed into buffer[] */
-  size_t public_bytes  = (size_t)file->public_symbols_number * 2u * sizeof(int);
-  size_t string_bytes  = (size_t)file->stringtab_size;
+  size_t payload_bytes =
+      size - 3u * sizeof(int); /* bytes placed into buffer[] */
+  size_t public_bytes = (size_t)file->public_symbols_number * 2u * sizeof(int);
+  size_t string_bytes = (size_t)file->stringtab_size;
 
-  if (public_bytes > payload_bytes || public_bytes + string_bytes > payload_bytes) {
+  if (public_bytes > payload_bytes ||
+      public_bytes + string_bytes > payload_bytes) {
     fprintf(stderr, "Invalid bytecode: tables out of range\n");
     free(file);
     return NULL;
@@ -85,7 +80,7 @@ bytefile *parse_bc_file(char *fname)
 
   file->public_ptr = (int *)file->buffer;
   file->string_ptr = file->buffer + public_bytes;
-  file->code_ptr   = file->string_ptr + string_bytes;
+  file->code_ptr = file->string_ptr + string_bytes;
 
   file->global_ptr = (int *)calloc((size_t)file->global_area_size, sizeof(int));
   if (!file->global_ptr && file->global_area_size != 0) {
