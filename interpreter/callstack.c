@@ -37,7 +37,6 @@ typedef struct callstack_t {
   char *sp; /* top */
 
   /* Internal */
-  // size_t size;             /* sp - ram_layout */
   size_t capacity; /* allocated capacity */
 
   /* Prevent underflow */
@@ -50,6 +49,30 @@ typedef struct callstack_t {
 } callstack_t;
 
 /* Helpers */
+static inline void realloc_if_need(callstack_t *stack) {
+  size_t used = (size_t)(stack->sp - stack->ram_layout);
+  if (used <= stack->capacity) {
+    return;
+  }
+
+  ptrdiff_t sp_off = stack->sp - stack->ram_layout;
+  ptrdiff_t fp_off = stack->fp ? (stack->fp - stack->ram_layout) : -1;
+
+  size_t new_cap = stack->capacity * 2;
+  char *new_layout = realloc(stack->ram_layout, new_cap);
+  if (new_layout == NULL) {
+    fprintf(stderr, "Not enough memory to realloc callstack with size %lu\n",
+            (unsigned long)new_cap);
+    free(stack->ram_layout);
+    exit(1);
+  }
+
+  stack->ram_layout = new_layout;
+  stack->capacity = new_cap;
+  stack->sp = stack->ram_layout + sp_off;
+  stack->fp = (fp_off >= 0) ? (stack->ram_layout + fp_off) : NULL;
+}
+
 static inline uint32_t load_u32(const void *p) {
   uint32_t v;
   memcpy(&v, p, sizeof(v));
@@ -58,23 +81,32 @@ static inline uint32_t load_u32(const void *p) {
 static inline void store_u32(void *p, uint32_t v) { memcpy(p, &v, sizeof(v)); }
 
 static inline void cs_push_u32(callstack_t *s, uint32_t v) {
-  memcpy(s->sp, &v, sizeof(v));
   s->sp += sizeof(uint32_t);
+  realloc_if_need(s);
+  memcpy(s->sp - sizeof(uint32_t), &v, sizeof(v));
 }
 static inline void cs_push_u64(callstack_t *s, uint64_t v) {
-  memcpy(s->sp, &v, sizeof(v));
   s->sp += sizeof(uint64_t);
+  realloc_if_need(s);
+  memcpy(s->sp - sizeof(uint64_t), &v, sizeof(v));
 }
 static inline void cs_push_i32(callstack_t *s, int32_t v) {
-  memcpy(s->sp, &v, sizeof(v));
   s->sp += sizeof(int32_t);
+  realloc_if_need(s);
+  memcpy(s->sp - sizeof(int32_t), &v, sizeof(v));
+}
+static inline void cs_push_ptrdiff(callstack_t *s, ptrdiff_t v) {
+  s->sp += sizeof(ptrdiff_t);
+  realloc_if_need(s);
+  memcpy(s->sp - sizeof(ptrdiff_t), &v, sizeof(v));
 }
 
 #define PUSH(S, V)                                                             \
   _Generic((V),                                                                \
       uint32_t: cs_push_u32,                                                   \
       uint64_t: cs_push_u64,                                                   \
-      int32_t: cs_push_i32)((S), (V))
+      int32_t: cs_push_i32,                                                    \
+      ptrdiff_t: cs_push_ptrdiff)((S), (V))
 
 static inline uint32_t cs_pop_u32(callstack_t *s) {
   uint32_t v;
@@ -94,12 +126,19 @@ static inline int32_t cs_pop_i32(callstack_t *s) {
   memcpy(&v, s->sp, sizeof(v));
   return v;
 }
+static inline ptrdiff_t cs_pop_ptrdiff(callstack_t *s) {
+  ptrdiff_t v;
+  s->sp -= sizeof(ptrdiff_t);
+  memcpy(&v, s->sp, sizeof(v));
+  return v;
+}
 
 #define POP(S, TYPE)                                                           \
   _Generic(((TYPE)0),                                                          \
       uint32_t: cs_pop_u32,                                                    \
       uint64_t: cs_pop_u64,                                                    \
-      int32_t: cs_pop_i32)((S))
+      int32_t: cs_pop_i32,                                                     \
+      ptrdiff_t: cs_pop_ptrdiff)((S))
 
 /* Segment base */
 static inline char *nlocals_base(callstack_t *s) { return s->fp; }
@@ -182,7 +221,9 @@ void callstack_push_frame(struct callstack_t *stack, char *return_addr,
   PUSH(stack, nargs);
 
   /* Prolog */
-  PUSH(stack, (uint64_t)stack->fp);
+  ptrdiff_t prev_fp_off = stack->fp ? (stack->fp - stack->ram_layout)
+                                    : (ptrdiff_t)-1; // Main frame hack
+  PUSH(stack, prev_fp_off);
   stack->fp = stack->sp;
   stack->nframes++;
 }
@@ -201,7 +242,11 @@ void callstack_alloc_locals(struct callstack_t *stack, uint32_t nlocals) {
 char *callstack_pop_frame(struct callstack_t *stack) {
   /* Epilog */
   stack->sp = stack->fp;
-  stack->fp = (char *)POP(stack, uint64_t);
+  // Main frame hack
+  ptrdiff_t prev_fp_off = POP(stack, ptrdiff_t);
+  stack->fp = (prev_fp_off < 0)
+                  ? NULL
+                  : (stack->ram_layout + prev_fp_off); // Main frame hack
   stack->nframes--;
 
   /* Args segment */
