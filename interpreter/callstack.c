@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "callstack.h"
+#include "gc.h"
 
 #define CALLSTACK_INITIAL_SIZE 64
 #define CALLSTACK_MAX_SIZE 1024
@@ -52,6 +53,23 @@ Call frame memory layout(RAM):
 \/
 */
 
+typedef ptrt csword_t;
+
+_Static_assert(sizeof(csword_t) == sizeof(aint),
+               "callstack slot size must match aint size");
+
+static inline csword_t aint_to_word(aint v) {
+  csword_t w;
+  memcpy(&w, &v, sizeof(w));
+  return w;
+}
+
+static inline aint word_to_aint(csword_t w) {
+  aint v;
+  memcpy(&v, &w, sizeof(v));
+  return v;
+}
+
 typedef struct callstack_t {
   /* Virtual regs */
   size_t fp; /* base of BOX(nlocals) for current frame */
@@ -66,17 +84,23 @@ typedef struct callstack_t {
   size_t nframes;
 
   /* RAM layout */
-  aint *ram_layout; /* aint slots */
+  csword_t *ram_layout;
 } callstack_t;
 
 /* Helpers */
+static inline void gc_sync(callstack_t *stack) {
+  gc_set_vm_stack_region((void *)stack->ram_layout,
+                         (void *)(stack->ram_layout + stack->sp));
+}
+
 static inline void realloc_if_need(callstack_t *stack) {
   if (stack->sp <= stack->capacity) {
     return;
   }
 
   size_t new_cap = stack->capacity * 2;
-  aint *new_layout = (aint *)realloc(stack->ram_layout, new_cap * sizeof(aint));
+  csword_t *new_layout =
+      (csword_t *)realloc(stack->ram_layout, new_cap * sizeof(csword_t));
   if (new_layout == NULL) {
     fprintf(stderr, "Not enough memory to realloc callstack with size %lu\n",
             (unsigned long)new_cap);
@@ -86,37 +110,41 @@ static inline void realloc_if_need(callstack_t *stack) {
 
   stack->ram_layout = new_layout;
   stack->capacity = new_cap;
+  gc_sync(stack);
 }
 
 // Push
-static inline void cs_push_aint(callstack_t *s, aint v) {
+static inline void push_aint(callstack_t *s, aint v) {
   s->sp++;
   realloc_if_need(s);
-  s->ram_layout[s->sp - 1] = v;
+  s->ram_layout[s->sp - 1] = aint_to_word(v);
+  gc_sync(s);
 }
 
-#define PUSHIMM(S, IMM) cs_push_aint(S, BOX((aint)IMM))
+#define PUSH(S, AINT) push_aint(S, AINT)
+#define PUSHIMM(S, IMM) push_aint(S, BOX((aint)IMM))
 
 // POP
-static inline aint cs_pop_aint(callstack_t *s) {
-  aint v;
+static inline aint pop_aint(callstack_t *s) {
   assert(s->sp > 0);
-  return s->ram_layout[--s->sp];
+  csword_t w = s->ram_layout[--s->sp];
+  gc_sync(s);
+  return word_to_aint(w);
 }
 
-static inline aint cs_pop_imm(callstack_t *s) {
-  aint imm = cs_pop_aint(s);
-  CS_ASSERT_UNBOXED("cs_pop_imm", imm);
+static inline aint pop_imm(callstack_t *s) {
+  aint imm = pop_aint(s);
+  CS_ASSERT_UNBOXED("pop_imm", imm);
   return UNBOX(imm);
 }
 
-#define POP(S) cs_pop_aint(S)
-#define POPIMM(S) cs_pop_imm(S)
+#define POP(S) pop_aint(S)
+#define POPIMM(S) pop_imm(S)
 
 /* Segment base idx (relative to fp) */
 static inline size_t nlocals_base_idx(callstack_t *s) { return s->fp; }
 static inline uint32_t nlocals(callstack_t *s) {
-  aint v = s->ram_layout[nlocals_base_idx(s)];
+  aint v = word_to_aint(s->ram_layout[nlocals_base_idx(s)]);
   CS_ASSERT_UNBOXED("nlocals", v);
   return (uint32_t)UNBOX(v);
 }
@@ -124,7 +152,7 @@ static inline uint32_t nlocals(callstack_t *s) {
 static inline size_t prev_fp_base_idx(callstack_t *s) { return s->fp - 1; }
 static inline size_t nargs_base_idx(callstack_t *s) { return s->fp - 2; }
 static inline uint32_t nargs(callstack_t *s) {
-  aint v = s->ram_layout[nargs_base_idx(s)];
+  aint v = word_to_aint(s->ram_layout[nargs_base_idx(s)]);
   CS_ASSERT_UNBOXED("nargs", v);
   return (uint32_t)UNBOX(v);
 }
@@ -144,7 +172,7 @@ static inline size_t operands_base_idx(callstack_t *s) {
 
 /* noperands etc. */
 static inline uint32_t noperands(callstack_t *s) {
-  aint v = s->ram_layout[noperands_base_idx(s)];
+  aint v = word_to_aint(s->ram_layout[noperands_base_idx(s)]);
   CS_ASSERT_UNBOXED("noperands", v);
   return (uint32_t)UNBOX(v);
 }
@@ -155,13 +183,15 @@ size_t callstack_nframes(callstack_t *s) { return s->nframes; }
 
 /* Lifecycle */
 callstack_t *create_callstack() {
+  __gc_init();
+
   callstack_t *stack = malloc(sizeof(callstack_t));
   if (!stack) {
     return NULL;
   }
 
   /* RAM layout */
-  stack->ram_layout = malloc((size_t)CALLSTACK_INITIAL_SIZE * sizeof(aint));
+  stack->ram_layout = malloc((size_t)CALLSTACK_INITIAL_SIZE * sizeof(csword_t));
   if (!stack->ram_layout) {
     free(stack);
     return NULL;
@@ -175,6 +205,7 @@ callstack_t *create_callstack() {
   stack->capacity = (size_t)CALLSTACK_INITIAL_SIZE;
   stack->nframes = 0;
 
+  gc_sync(stack);
   return stack;
 }
 
@@ -218,6 +249,7 @@ uint32_t callstack_pop_frame(callstack_t *stack) {
   stack->sp = stack->fp;
   stack->fp = (size_t)POPIMM(stack);
   stack->nframes--;
+  gc_sync(stack);
 
   /* Args segment */
   POPIMM(stack);
@@ -236,9 +268,8 @@ aint callstack_get_local(callstack_t *stack, uint32_t index) {
   }
 
   size_t base = locals_base_idx(stack);
-  return stack->ram_layout[base + index];
+  return word_to_aint(stack->ram_layout[base + index]);
 }
-
 void callstack_set_local(callstack_t *stack, uint32_t index, aint value) {
 
   uint32_t nlocals_ = nlocals(stack);
@@ -249,8 +280,9 @@ void callstack_set_local(callstack_t *stack, uint32_t index, aint value) {
   }
 
   size_t base = locals_base_idx(stack);
-  stack->ram_layout[base + index] = value;
+  stack->ram_layout[base + index] = aint_to_word(value);
 }
+
 aint callstack_get_arg(callstack_t *stack, uint32_t index) {
   uint32_t nargs_ = nargs(stack);
   if (index >= nargs_) {
@@ -260,7 +292,7 @@ aint callstack_get_arg(callstack_t *stack, uint32_t index) {
   }
 
   size_t base = args_base_idx(stack);
-  return stack->ram_layout[base + index];
+  return word_to_aint(stack->ram_layout[base + index]);
 }
 void callstack_set_arg(callstack_t *stack, uint32_t index, aint value) {
   uint32_t nargs_ = nargs(stack);
@@ -271,7 +303,7 @@ void callstack_set_arg(callstack_t *stack, uint32_t index, aint value) {
   }
 
   size_t base = args_base_idx(stack);
-  stack->ram_layout[base + index] = value;
+  stack->ram_layout[base + index] = aint_to_word(value);
 }
 
 /* Operands stack */
@@ -284,7 +316,7 @@ aint callstack_pop_operand(callstack_t *stack) {
   }
 
   size_t base = noperands_base_idx(stack);
-  stack->ram_layout[base] = BOX(noperands_ - 1);
+  stack->ram_layout[base] = aint_to_word(BOX(noperands_ - 1));
 
   return POP(stack); // Free boxed val?
 }
@@ -292,7 +324,7 @@ void callstack_push_operand(callstack_t *stack, aint value) {
   uint32_t noperands_ = noperands(stack);
 
   size_t base = noperands_base_idx(stack);
-  stack->ram_layout[base] = BOX(noperands_ + 1);
+  stack->ram_layout[base] = aint_to_word(BOX(noperands_ + 1));
 
   PUSH(stack, value);
 }
