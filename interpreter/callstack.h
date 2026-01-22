@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "runtime_common.h"
+
 /* Opaque */
 struct callstack_t;
 
@@ -16,21 +18,19 @@ struct callstack_t *create_callstack();
 void destroy_callstack(struct callstack_t *);
 
 /* Frame operations */
-void callstack_push_frame(struct callstack_t *stack, char *return_addr,
+void callstack_push_frame(struct callstack_t *stack, uint32_t ret_off,
                           uint32_t nargs);
 void callstack_alloc_locals(struct callstack_t *stack, uint32_t nlocals);
-char *callstack_pop_frame(struct callstack_t *stack);
+uint32_t callstack_pop_frame(struct callstack_t *stack);
 
 /* Access arguments and locals */
-int32_t callstack_get_local(struct callstack_t *stack, uint32_t index);
-void callstack_set_local(struct callstack_t *stack, uint32_t index,
-                         int32_t value);
-int32_t callstack_get_arg(struct callstack_t *stack, uint32_t index);
-void callstack_set_arg(struct callstack_t *stack, uint32_t index,
-                       int32_t value);
+aint callstack_get_local(struct callstack_t *stack, uint32_t index);
+void callstack_set_local(struct callstack_t *stack, uint32_t index, aint value);
+aint callstack_get_arg(struct callstack_t *stack, uint32_t index);
+void callstack_set_arg(struct callstack_t *stack, uint32_t index, aint value);
 
 /* Operands stack */
-int32_t callstack_pop_operand(struct callstack_t *stack);
-void callstack_push_operand(struct callstack_t *stack, int32_t value);
+aint callstack_pop_operand(struct callstack_t *stack);
+void callstack_push_operand(struct callstack_t *stack, aint value);
 
 #endif

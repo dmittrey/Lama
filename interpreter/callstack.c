@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,36 +10,55 @@
 #define CALLSTACK_INITIAL_SIZE 64
 #define CALLSTACK_MAX_SIZE 1024
 
+#define CS_ASSERT_UNBOXED(memo, x)                                             \
+  do {                                                                         \
+    if (!UNBOXED(x)) {                                                         \
+      fprintf(stderr, "unboxed value expected in %s\n", memo);                 \
+      abort();                                                                 \
+    }                                                                          \
+  } while (0)
+
+#define CS_ASSERT_BOXED(memo, x)                                               \
+  do {                                                                         \
+    if (UNBOXED(x)) {                                                          \
+      fprintf(stderr, "boxed value expected in %s\n", memo);                   \
+      abort();                                                                 \
+    }                                                                          \
+  } while (0)
+
 /*
 Call frame memory layout(RAM):
 +-----------------------------+
-| arguments (i32)             |
+| arguments (aint)            |
 +-----------------------------+ <- (SP when push new frame)
-| return addr (u64)           |
+| BOX(ret_off) (aint)         |
 +-----------------------------+
-| narguments (u32)            |
+| BOX(narguments) (aint)      |
 +-----------------------------+
-| prev_fp_off (u64)           |
+| BOX(prev_fp)                |   // 0 => no prev frame
 +-----------------------------+ <- FP
-| nlocals (u32)               |
+| BOX(nlocals) (aint)         |
++--------------------------------+
+| locals[0..nlocals-1] (aint[])  |   // VM values (boxed heap ptr or imm)
++--------------------------------+
+| BOX(noperands) (aint)       |
 +-----------------------------+
-| locals[0..nlocals-1] (i32)  |
-+-----------------------------+
-| noperands (u32)             |
-+-----------------------------+
-| operands stack (i32)        |
+| operands  (aint[])          |   // VM values (boxed heap ptr or imm)
 +-----------------------------+ <- SP
 | free                        |
 +-----------------------------+
+||
+|| grow down
+\/
 */
 
 typedef struct callstack_t {
   /* Virtual regs */
-  char *fp; /* base of locals for current frame */
-  char *sp; /* top */
+  size_t fp; /* base of BOX(nlocals) for current frame */
+  size_t sp; /* index of next free word */
 
   /* Internal */
-  size_t capacity; /* allocated capacity */
+  size_t capacity; /* allocated capacity (aint slots) */
 
   /* Prevent underflow */
   // TODO Переделать на секцию активации на дне стека чтобы при обращении можно
@@ -45,21 +66,17 @@ typedef struct callstack_t {
   size_t nframes;
 
   /* RAM layout */
-  char *ram_layout;
+  aint *ram_layout; /* aint slots */
 } callstack_t;
 
 /* Helpers */
 static inline void realloc_if_need(callstack_t *stack) {
-  size_t used = (size_t)(stack->sp - stack->ram_layout);
-  if (used <= stack->capacity) {
+  if (stack->sp <= stack->capacity) {
     return;
   }
 
-  ptrdiff_t sp_off = stack->sp - stack->ram_layout;
-  ptrdiff_t fp_off = stack->fp ? (stack->fp - stack->ram_layout) : -1;
-
   size_t new_cap = stack->capacity * 2;
-  char *new_layout = realloc(stack->ram_layout, new_cap);
+  aint *new_layout = (aint *)realloc(stack->ram_layout, new_cap * sizeof(aint));
   if (new_layout == NULL) {
     fprintf(stderr, "Not enough memory to realloc callstack with size %lu\n",
             (unsigned long)new_cap);
@@ -69,110 +86,67 @@ static inline void realloc_if_need(callstack_t *stack) {
 
   stack->ram_layout = new_layout;
   stack->capacity = new_cap;
-  stack->sp = stack->ram_layout + sp_off;
-  stack->fp = (fp_off >= 0) ? (stack->ram_layout + fp_off) : NULL;
 }
 
-static inline uint32_t load_u32(const void *p) {
-  uint32_t v;
-  memcpy(&v, p, sizeof(v));
-  return v;
-}
-static inline void store_u32(void *p, uint32_t v) { memcpy(p, &v, sizeof(v)); }
-
-static inline void cs_push_u32(callstack_t *s, uint32_t v) {
-  s->sp += sizeof(uint32_t);
+// Push
+static inline void cs_push_aint(callstack_t *s, aint v) {
+  s->sp++;
   realloc_if_need(s);
-  memcpy(s->sp - sizeof(uint32_t), &v, sizeof(v));
-}
-static inline void cs_push_u64(callstack_t *s, uint64_t v) {
-  s->sp += sizeof(uint64_t);
-  realloc_if_need(s);
-  memcpy(s->sp - sizeof(uint64_t), &v, sizeof(v));
-}
-static inline void cs_push_i32(callstack_t *s, int32_t v) {
-  s->sp += sizeof(int32_t);
-  realloc_if_need(s);
-  memcpy(s->sp - sizeof(int32_t), &v, sizeof(v));
-}
-static inline void cs_push_ptrdiff(callstack_t *s, ptrdiff_t v) {
-  s->sp += sizeof(ptrdiff_t);
-  realloc_if_need(s);
-  memcpy(s->sp - sizeof(ptrdiff_t), &v, sizeof(v));
+  s->ram_layout[s->sp - 1] = v;
 }
 
-#define PUSH(S, V)                                                             \
-  _Generic((V),                                                                \
-      uint32_t: cs_push_u32,                                                   \
-      uint64_t: cs_push_u64,                                                   \
-      int32_t: cs_push_i32,                                                    \
-      ptrdiff_t: cs_push_ptrdiff)((S), (V))
+#define PUSHIMM(S, IMM) cs_push_aint(S, BOX((aint)IMM))
 
-static inline uint32_t cs_pop_u32(callstack_t *s) {
-  uint32_t v;
-  s->sp -= sizeof(uint32_t);
-  memcpy(&v, s->sp, sizeof(v));
-  return v;
-}
-static inline uint64_t cs_pop_u64(callstack_t *s) {
-  uint64_t v;
-  s->sp -= sizeof(uint64_t);
-  memcpy(&v, s->sp, sizeof(v));
-  return v;
-}
-static inline int32_t cs_pop_i32(callstack_t *s) {
-  int32_t v;
-  s->sp -= sizeof(int32_t);
-  memcpy(&v, s->sp, sizeof(v));
-  return v;
-}
-static inline ptrdiff_t cs_pop_ptrdiff(callstack_t *s) {
-  ptrdiff_t v;
-  s->sp -= sizeof(ptrdiff_t);
-  memcpy(&v, s->sp, sizeof(v));
-  return v;
+// POP
+static inline aint cs_pop_aint(callstack_t *s) {
+  aint v;
+  assert(s->sp > 0);
+  return s->ram_layout[--s->sp];
 }
 
-#define POP(S, TYPE)                                                           \
-  _Generic(((TYPE)0),                                                          \
-      uint32_t: cs_pop_u32,                                                    \
-      uint64_t: cs_pop_u64,                                                    \
-      int32_t: cs_pop_i32,                                                     \
-      ptrdiff_t: cs_pop_ptrdiff)((S))
+static inline aint cs_pop_imm(callstack_t *s) {
+  aint imm = cs_pop_aint(s);
+  CS_ASSERT_UNBOXED("cs_pop_imm", imm);
+  return UNBOX(imm);
+}
 
-/* Segment base */
-static inline char *nlocals_base(callstack_t *s) { return s->fp; }
+#define POP(S) cs_pop_aint(S)
+#define POPIMM(S) cs_pop_imm(S)
+
+/* Segment base idx (relative to fp) */
+static inline size_t nlocals_base_idx(callstack_t *s) { return s->fp; }
 static inline uint32_t nlocals(callstack_t *s) {
-  return load_u32(nlocals_base(s));
+  aint v = s->ram_layout[nlocals_base_idx(s)];
+  CS_ASSERT_UNBOXED("nlocals", v);
+  return (uint32_t)UNBOX(v);
 }
 
-static inline char *prev_fp_off_base(callstack_t *s) {
-  return nlocals_base(s) - sizeof(uint64_t);
-}
-static inline char *narguments_base(callstack_t *s) {
-  return prev_fp_off_base(s) - sizeof(uint32_t);
-}
+static inline size_t prev_fp_base_idx(callstack_t *s) { return s->fp - 1; }
+static inline size_t nargs_base_idx(callstack_t *s) { return s->fp - 2; }
 static inline uint32_t nargs(callstack_t *s) {
-  return load_u32(narguments_base(s));
-}
-static inline char *ret_addr_base(callstack_t *s) {
-  return narguments_base(s) - sizeof(uint64_t);
-}
-static inline char *arguments_base(callstack_t *s) {
-  return ret_addr_base(s) - (size_t)nargs(s) * sizeof(int32_t);
+  aint v = s->ram_layout[nargs_base_idx(s)];
+  CS_ASSERT_UNBOXED("nargs", v);
+  return (uint32_t)UNBOX(v);
 }
 
-static inline char *locals_base(callstack_t *s) {
-  return nlocals_base(s) + sizeof(uint32_t);
+static inline size_t ret_off_base_idx(callstack_t *s) { return s->fp - 3; }
+static inline size_t args_base_idx(callstack_t *s) {
+  return ret_off_base_idx(s) - (size_t)nargs(s);
 }
-static inline char *noperands_base(callstack_t *s) {
-  return locals_base(s) + (size_t)nlocals(s) * sizeof(int32_t);
+
+static inline size_t locals_base_idx(callstack_t *s) { return s->fp + 1; }
+static inline size_t noperands_base_idx(callstack_t *s) {
+  return locals_base_idx(s) + (size_t)nlocals(s);
 }
+static inline size_t operands_base_idx(callstack_t *s) {
+  return noperands_base_idx(s) + 1;
+}
+
+/* noperands etc. */
 static inline uint32_t noperands(callstack_t *s) {
-  return load_u32(noperands_base(s));
-}
-static inline char *operands_base(callstack_t *s) {
-  return noperands_base(s) + sizeof(uint32_t);
+  aint v = s->ram_layout[noperands_base_idx(s)];
+  CS_ASSERT_UNBOXED("noperands", v);
+  return (uint32_t)UNBOX(v);
 }
 
 /* Public Helpers */
@@ -187,18 +161,18 @@ callstack_t *create_callstack() {
   }
 
   /* RAM layout */
-  stack->ram_layout = malloc(CALLSTACK_INITIAL_SIZE);
+  stack->ram_layout = malloc((size_t)CALLSTACK_INITIAL_SIZE * sizeof(aint));
   if (!stack->ram_layout) {
     free(stack);
     return NULL;
   }
 
   /* Virt regs */
-  stack->fp = NULL;
-  stack->sp = stack->ram_layout;
+  stack->fp = 0;
+  stack->sp = 0;
 
   /* Internal */
-  stack->capacity = CALLSTACK_INITIAL_SIZE;
+  stack->capacity = (size_t)CALLSTACK_INITIAL_SIZE;
   stack->nframes = 0;
 
   return stack;
@@ -212,128 +186,113 @@ void destroy_callstack(callstack_t *stack) {
 }
 
 /* Frame operations */
-void callstack_push_frame(struct callstack_t *stack, char *return_addr,
-                          uint32_t nargs) {
+void callstack_push_frame(callstack_t *stack, uint32_t ret_off,
+                          uint32_t nargument) {
   /* Return address segment */
-  PUSH(stack, (uint64_t)return_addr);
+  PUSHIMM(stack, ret_off); // Return offset
 
   /* Args segment */
-  PUSH(stack, nargs);
+  PUSHIMM(stack, nargument);
 
   /* Prolog */
-  ptrdiff_t prev_fp_off = stack->fp ? (stack->fp - stack->ram_layout)
-                                    : (ptrdiff_t)-1; // Main frame hack
-  PUSH(stack, prev_fp_off);
+  PUSHIMM(stack, stack->fp);
   stack->fp = stack->sp;
   stack->nframes++;
 }
-void callstack_alloc_locals(struct callstack_t *stack, uint32_t nlocals) {
-  if (stack->nframes > 0)
-    assert(stack->fp == stack->sp);
+void callstack_alloc_locals(callstack_t *stack, uint32_t nlocals) {
+  assert(stack->fp == stack->sp);
 
   /* Locals segment */
-  PUSH(stack, nlocals);
+  PUSHIMM(stack, nlocals);
+  // Error avoid way(for me:)) to reserve space in frame for nlocals
   for (size_t i = 0; i < nlocals; i++)
-    PUSH(stack, (uint32_t)0);
+    PUSHIMM(stack, 0);
 
   /* Operands segment */
-  PUSH(stack, (uint32_t)0); // noperands
+  PUSHIMM(stack, 0); // noperands
 }
-char *callstack_pop_frame(struct callstack_t *stack) {
+uint32_t callstack_pop_frame(callstack_t *stack) {
+  assert(stack->nframes > 0);
+
   /* Epilog */
   stack->sp = stack->fp;
-  // Main frame hack
-  ptrdiff_t prev_fp_off = POP(stack, ptrdiff_t);
-  stack->fp = (prev_fp_off < 0)
-                  ? NULL
-                  : (stack->ram_layout + prev_fp_off); // Main frame hack
+  stack->fp = (size_t)POPIMM(stack);
   stack->nframes--;
 
   /* Args segment */
-  POP(stack, uint32_t);
+  POPIMM(stack);
 
   /* Return address segment */
-  return (char *)POP(stack, uint64_t);
+  return POPIMM(stack);
 }
 
 /* Access arguments and locals */
-int32_t callstack_get_local(struct callstack_t *stack, uint32_t index) {
-  callstack_t *s = (callstack_t *)stack;
-  assert(s);
-
-  uint32_t nlocals_ = nlocals(s);
+aint callstack_get_local(callstack_t *stack, uint32_t index) {
+  uint32_t nlocals_ = nlocals(stack);
   if (index >= nlocals_) {
     fprintf(stderr, "Invalid local access: index %u, nlocals %u\n", index,
             nlocals_);
     exit(1);
   }
 
-  int32_t *locals = (int32_t *)locals_base(stack);
-  return locals[index];
+  size_t base = locals_base_idx(stack);
+  return stack->ram_layout[base + index];
 }
-void callstack_set_local(struct callstack_t *stack, uint32_t index,
-                         int32_t value) {
-  callstack_t *s = (callstack_t *)stack;
-  assert(s);
 
-  uint32_t nlocals_ = nlocals(s);
+void callstack_set_local(callstack_t *stack, uint32_t index, aint value) {
+
+  uint32_t nlocals_ = nlocals(stack);
   if (index >= nlocals_) {
     fprintf(stderr, "Invalid local access: index %u, nlocals %u\n", index,
             nlocals_);
     exit(1);
   }
 
-  int32_t *locals = (int32_t *)locals_base(stack);
-  locals[index] = value;
+  size_t base = locals_base_idx(stack);
+  stack->ram_layout[base + index] = value;
 }
-int32_t callstack_get_arg(struct callstack_t *stack, uint32_t index) {
-  callstack_t *s = (callstack_t *)stack;
-  assert(s);
-
-  uint32_t nargs_ = nargs(s);
+aint callstack_get_arg(callstack_t *stack, uint32_t index) {
+  uint32_t nargs_ = nargs(stack);
   if (index >= nargs_) {
     fprintf(stderr, "Invalid argument access: index %u, nargs %u\n", index,
             nargs_);
     exit(1);
   }
 
-  int32_t *args = (int32_t *)arguments_base(stack);
-  return args[index];
+  size_t base = args_base_idx(stack);
+  return stack->ram_layout[base + index];
 }
-void callstack_set_arg(struct callstack_t *stack, uint32_t index,
-                       int32_t value) {
-  callstack_t *s = (callstack_t *)stack;
-  assert(s);
-
-  uint32_t nargs_ = nargs(s);
+void callstack_set_arg(callstack_t *stack, uint32_t index, aint value) {
+  uint32_t nargs_ = nargs(stack);
   if (index >= nargs_) {
-    fprintf(stderr, "Invalid local access: index %u, nargs %u\n", index,
+    fprintf(stderr, "Invalid argument access: index %u, nargs %u\n", index,
             nargs_);
     exit(1);
   }
 
-  int32_t *args = (int32_t *)arguments_base(stack);
-  args[index] = value;
+  size_t base = args_base_idx(stack);
+  stack->ram_layout[base + index] = value;
 }
 
 /* Operands stack */
-int32_t callstack_pop_operand(struct callstack_t *stack) {
+aint callstack_pop_operand(callstack_t *stack) {
   uint32_t noperands_ = noperands(stack);
-  assert(noperands_ > 0);
 
   if (noperands_ == 0) {
     fprintf(stderr, "Operands stack underflow\n");
     exit(1);
   }
 
-  store_u32(noperands_base(stack), noperands_ - 1);
-  int32_t operand = POP(stack, int32_t);
+  size_t base = noperands_base_idx(stack);
+  stack->ram_layout[base] = BOX(noperands_ - 1);
 
-  return operand;
+  return POP(stack); // Free boxed val?
 }
-void callstack_push_operand(struct callstack_t *stack, int32_t value) {
+void callstack_push_operand(callstack_t *stack, aint value) {
   uint32_t noperands_ = noperands(stack);
 
-  store_u32(noperands_base(stack), noperands_ + 1);
+  size_t base = noperands_base_idx(stack);
+  stack->ram_layout[base] = BOX(noperands_ + 1);
+
   PUSH(stack, value);
 }
