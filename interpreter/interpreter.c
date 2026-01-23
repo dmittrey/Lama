@@ -33,6 +33,7 @@ extern aint Ls__Infix_6261(void *p, void *q); /* >= */
 extern void *Bstring(aint *args);
 extern void *Bsexp(aint *args, aint bn);
 extern void *Bsta(void *x, aint i, void *v);
+extern void *Belem(void *p, aint i);
 
 static inline uint8_t read_u8(interpreter_state_t *st) {
   return (uint8_t)*st->ip++;
@@ -250,9 +251,13 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       } break;
 
       case 11: /* ELEM */
-        fprintf(stderr, "ELEM instruction not implemented yet\n");
-        exit(1);
-        break;
+      {
+        aint idx = callstack_pop_operand(state->callstack);
+        aint agg = callstack_pop_operand(state->callstack);
+
+        void *r = Belem((void *)agg, idx);
+        callstack_push_operand(state->callstack, (aint)r);
+      } break;
 
       default:
         FAIL;
