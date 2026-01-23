@@ -237,4 +237,6 @@ void *alloc_array (auint len);
 void *alloc_sexp (auint members);
 void *alloc_closure (auint captured);
 
+void gc_set_vm_stack_region (void *begin, void *end);
+
 #endif

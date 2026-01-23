@@ -25,6 +25,46 @@ size_t cur_id = 0;
 static extra_roots_pool extra_roots;
 
 size_t __gc_stack_top = 0, __gc_stack_bottom = 0;
+
+/*
+As I see, there is a strategy in GC to index "roots" on cur
+C stack(called Lama stack). Roots is a stack based aint* pointing
+to GC heap located Lama agregates.
+
+__gc_stack_top is pointing to current C stack frame top.
+
+__gc_vm_stack_end is moving by POST_GC, PRE_GC macro using.
+As I can see, its most depth stack frame that I can reach in
+my VM. When im working with own callstack implementation, there
+is huge range:
+<- stack start
+
+<- place in C program heap with own stack
+
+I think this way is wasting many resources to scan
+this range to mark-and-compact. My strategy is to
+register extra area to "VM stack" and store IMM
+values in UNBOXED view, aint* values in BOXED view.
+When I will reach scan phase, I will scan and compact
+this area.
+*/
+
+size_t *__gc_vm_stack_begin = NULL;
+size_t *__gc_vm_stack_end = NULL;
+
+void gc_set_vm_stack_region(void *begin, void *end) {
+  __gc_vm_stack_begin = (size_t *)begin;
+  __gc_vm_stack_end = (size_t *)end;
+}
+
+static void gc_root_scan_vm_stack(void) {
+  if (!__gc_vm_stack_begin || !__gc_vm_stack_end)
+    return;
+  for (size_t *p = __gc_vm_stack_begin; p < __gc_vm_stack_end; ++p) {
+    gc_test_and_mark_root((size_t **)p);
+  }
+}
+
 #ifdef LAMA_ENV
 #ifdef __linux__
 extern const size_t __start_custom_data, __stop_custom_data;
@@ -257,6 +297,14 @@ void mark_phase (void) {
   gc_root_scan_stack();
 #if defined(DEBUG_VERSION) && defined(DEBUG_PRINT)
   fprintf(stderr, "gc_root_scan_stack has finished\n");
+  fprintf(stderr,
+          "gc_root_scan_vm_stack has started: gc_top=%p bot=%p\n",
+          (void *)__gc_vm_stack_begin,
+          (void *)__gc_vm_stack_end);
+#endif
+  gc_root_scan_vm_stack();
+#if defined(DEBUG_VERSION) && defined(DEBUG_PRINT)
+  fprintf(stderr, "gc_root_scan_vm_stack has finished\n");
   fprintf(stderr, "scan_extra_roots has started\n");
 #endif
   scan_extra_roots();
@@ -461,6 +509,9 @@ void update_references (memory_chunk *old_heap) {
   }
   // fix pointers from stack
   scan_and_fix_region(old_heap, (void *)__gc_stack_top + sizeof(size_t), (void *)__gc_stack_bottom + sizeof(size_t));
+
+  // fix pointers from VM stack
+  scan_and_fix_region(old_heap, __gc_vm_stack_begin, __gc_vm_stack_end);
 
   // fix pointers from extra_roots
   scan_and_fix_region_roots(old_heap);
