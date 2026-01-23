@@ -164,6 +164,10 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
 
         aint th = LtagHash(tag);
         callstack_push_operand(state->callstack, th);
+
+        if (arity == 0) /* constructor constant */
+          break;
+
         // arg0 , ... , argN-1 , tag
         void *r = Bsexp(
             callstack_n_last_operands_sequence(state->callstack, arity + 1),
@@ -484,7 +488,15 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         aint th = LtagHash(tag);
         aint an = BOX(arity);
 
-        aint r = Btag((void *)p, th, an);
+        aint r;
+
+        if (arity == 0 && UNBOXED(p)) {
+          /* immediate constructor  */
+          r = (UNBOX(p) == UNBOX(th)) ? BOX(1) : BOX(0);
+        } else {
+          /* sexp / array / other */
+          r = Btag((void *)p, th, an);
+        }
 
         callstack_push_operand(state->callstack, r);
       } break;
