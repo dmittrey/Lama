@@ -32,6 +32,7 @@ extern aint Ls__Infix_6261(void *p, void *q); /* >= */
 
 extern void *Bstring(aint *args);
 extern void *Bsexp(aint *args, aint bn);
+extern void *Bsta(void *x, aint i, void *v);
 
 static inline uint8_t read_u8(interpreter_state_t *st) {
   return (uint8_t)*st->ip++;
@@ -165,14 +166,37 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       } break;
 
       case 3: /* STI */
-        fprintf(stderr, "STI instruction not implemented yet\n");
-        exit(1);
-        break;
+      {
+        aint val = callstack_pop_operand(state->callstack);
+        aint ref = callstack_pop_operand(state->callstack);
+
+        if (UNBOXED(ref)) {
+          failure("STI: reference expected, got unboxed %" PRIdAI "\n",
+                  UNBOX(ref));
+        }
+
+        Bsta((void *)ref, ref, (void *)val);
+        callstack_push_operand(state->callstack, val);
+      } break;
 
       case 4: /* STA */
-        fprintf(stderr, "STA instruction not implemented yet\n");
-        exit(1);
-        break;
+      {
+        aint val = callstack_pop_operand(state->callstack);
+        aint sec_op = callstack_pop_operand(state->callstack);
+
+        // case AGGREGATE: agg idx val
+        if (UNBOXED(sec_op)) {
+          aint idx = sec_op;
+          aint agg = callstack_pop_operand(state->callstack);
+          Bsta((void *)agg, idx, (void *)val);
+        }
+        // case REF: ref val
+        else {
+          aint ref = sec_op;
+          Bsta((void *)ref, ref, (void *)val);
+        }
+        callstack_push_operand(state->callstack, val);
+      } break;
 
       case 5: /* JMP */
       {
