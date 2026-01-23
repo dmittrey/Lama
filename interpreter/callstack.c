@@ -34,6 +34,8 @@ Call frame memory layout(RAM):
 +-----------------------------+
 | arguments (aint)            |
 +-----------------------------+ <- (SP when push new frame)
+| closure | BOX(0)            | closures ptr() or BOX(0) when
++-----------------------------+
 | BOX(ret_off) (aint)         |
 +-----------------------------+
 | BOX(narguments) (aint)      |
@@ -127,9 +129,9 @@ static inline void realloc_if_need(callstack_t *stack) {
 
 // Push
 static inline void push_aint(callstack_t *s, aint v) {
-  s->sp++;
-  realloc_if_need(s);
-  s->ram_layout[s->sp - 1] = aint_to_word(v);
+  if (s->sp + 1 > s->capacity)
+    realloc_if_need(s);
+  s->ram_layout[s->sp++] = aint_to_word(v);
   gc_sync(s);
 }
 
@@ -170,8 +172,14 @@ static inline uint32_t nargs(callstack_t *s) {
 }
 
 static inline size_t ret_off_base_idx(callstack_t *s) { return s->fp - 3; }
+static inline size_t closure_base_idx(callstack_t *s) { return s->fp - 4; }
+static inline aint closure(callstack_t *s) {
+  if (s->nframes == 0)
+    return BOX(0);
+  return word_to_aint(s->ram_layout[closure_base_idx(s)]);
+}
 static inline size_t args_base_idx(callstack_t *s) {
-  return ret_off_base_idx(s) - (size_t)nargs(s);
+  return closure_base_idx(s) - (size_t)nargs(s);
 }
 
 static inline size_t locals_base_idx(callstack_t *s) { return s->fp + 1; }
@@ -204,6 +212,7 @@ static inline uint32_t noperands(callstack_t *s) {
 uint32_t callstack_nlocals(callstack_t *s) { return nlocals(s); }
 uint32_t callstack_nargs(callstack_t *s) { return nargs(s); }
 size_t callstack_nframes(callstack_t *s) { return s->nframes; }
+aint callstack_closure(callstack_t *s) { return closure(s); }
 
 /* Reference */
 aint *callstack_local_addr(callstack_t *s, uint32_t index) {
@@ -318,8 +327,13 @@ void destroy_callstack(callstack_t *stack) {
 }
 
 /* Frame operations */
-void callstack_push_frame(callstack_t *stack, uint32_t ret_off,
-                          uint32_t nargument) {
+void callstack_push_cframe(callstack_t *stack, aint closure, uint32_t ret_off,
+                           uint32_t nargument) {
+  assert((UNBOXED(closure) && UNBOX(closure) == 0) || !UNBOXED(closure));
+
+  /* Closure segment */
+  PUSH(stack, closure);
+
   /* Return address segment */
   PUSHIMM(stack, ret_off); // Return offset
 
@@ -330,6 +344,10 @@ void callstack_push_frame(callstack_t *stack, uint32_t ret_off,
   PUSHIMM(stack, stack->fp);
   stack->fp = stack->sp;
   stack->nframes++;
+}
+void callstack_push_frame(callstack_t *stack, uint32_t ret_off,
+                          uint32_t nargument) {
+  callstack_push_cframe(stack, BOX(0), ret_off, nargument);
 }
 void callstack_alloc_locals(callstack_t *stack, uint32_t nlocals) {
   assert(stack->fp == stack->sp);
@@ -350,13 +368,18 @@ uint32_t callstack_pop_frame(callstack_t *stack) {
   stack->sp = stack->fp;
   stack->fp = (size_t)POPIMM(stack);
   stack->nframes--;
-  gc_sync(stack);
 
   /* Args segment */
   POPIMM(stack);
 
   /* Return address segment */
-  return POPIMM(stack);
+  uint32_t ret_off = POPIMM(stack);
+
+  /* Closure segment */
+  POP(stack);
+
+  gc_sync(stack);
+  return ret_off;
 }
 
 /* Access arguments and locals */
