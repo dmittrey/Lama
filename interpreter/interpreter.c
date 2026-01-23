@@ -34,6 +34,11 @@ extern void *Bstring(aint *args);
 extern void *Bsexp(aint *args, aint bn);
 extern void *Bsta(void *x, aint i, void *v);
 extern void *Belem(void *p, aint i);
+extern aint Bsexp_tag_patt(void *x);
+extern aint LtagHash(char *s);
+extern aint Btag(void *d, aint t, aint n);
+
+extern aint Barray_patt(void *d, aint n);
 
 static inline uint8_t read_u8(interpreter_state_t *st) {
   return (uint8_t)*st->ip++;
@@ -468,18 +473,26 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         char *tag = STRING;
         int arity = INT;
-        (void)tag;
-        (void)arity;
-        fprintf(stderr, "TAG instruction not implemented yet\n");
-        exit(1);
+
+        aint p = callstack_pop_operand(state->callstack);
+
+        aint th = LtagHash(tag);
+        aint an = BOX(arity);
+
+        aint r = Btag((void *)p, th, an);
+
+        callstack_push_operand(state->callstack, r);
       } break;
 
       case 8: /* ARRAY */
       {
         int size = INT;
-        (void)size;
-        fprintf(stderr, "ARRAY instruction not implemented yet\n");
-        exit(1);
+
+        aint p = callstack_pop_operand(state->callstack);
+
+        aint r = Barray_patt((void *)p, size);
+
+        callstack_push_operand(state->callstack, r);
       } break;
 
       case 9: /* FAIL */
