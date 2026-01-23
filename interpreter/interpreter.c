@@ -32,6 +32,7 @@ extern aint Ls__Infix_6161(void *p, void *q); /* == */
 extern aint Ls__Infix_62(void *p, void *q);   /* >  */
 extern aint Ls__Infix_6261(void *p, void *q); /* >= */
 
+extern void *Bclosure(aint *args, aint bn);
 extern void *Bstring(aint *args);
 extern void *Bsexp(aint *args, aint bn);
 extern void *Bsta(void *x, aint i, void *v);
@@ -60,6 +61,39 @@ static inline int32_t read_i32(interpreter_state_t *st) {
 }
 
 static inline bool as_bool(aint v) { return UNBOXED(v) ? (UNBOX(v) != 0) : 1; }
+
+static inline void *closure_entry_ptr(aint clos) {
+  if (UNBOXED(clos)) {
+    failure("CALLC/LD C: closure expected, got unboxed\n");
+  }
+
+  data *d = TO_DATA((void *)clos);
+  if (TAG(d->data_header) != CLOSURE_TAG) {
+    failure("CALLC/LD C: closure expected, got tag=%ld\n", TAG(d->data_header));
+  }
+
+  return ((void **)d->contents)[0];
+}
+
+static inline aint closure_capture_ref(aint clos, uint32_t idx) {
+  if (UNBOXED(clos)) {
+    failure("LD/ST/LDA C: closure expected, got unboxed\n");
+  }
+
+  data *d = TO_DATA((void *)clos);
+  if (TAG(d->data_header) != CLOSURE_TAG) {
+    failure("LD/ST/LDA C: closure expected, got tag=%ld\n",
+            TAG(d->data_header));
+  }
+
+  aint len = LEN(d->data_header); // len = n + 1
+  if ((aint)(idx + 1) >= len) {
+    failure("LD/ST/LDA C: captured index %u out of range (len=%ld)\n", idx,
+            len);
+  }
+
+  return ((aint *)d->contents)[idx + 1];
+}
 
 void interpret_bc(FILE *f, interpreter_state_t *state) {
 #define INT (read_i32(state))
@@ -314,9 +348,17 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       } break;
 
       case 3: /* LD C(m) */
-        fprintf(stderr, "Closure variables not implemented yet\n");
-        exit(1);
-        break;
+      {
+        int32_t index = INT;
+        aint clos = callstack_closure(state->callstack);
+        if (UNBOXED(clos) && UNBOX(clos) == 0) {
+          failure("LD C(%d): no closure in current frame\n", index);
+        }
+
+        aint ref = closure_capture_ref(clos, (uint32_t)index);
+        aint *cell = callstack_resolve_ref(state->callstack, ref);
+        callstack_push_operand(state->callstack, *cell);
+      } break;
 
       default:
         FAIL;
@@ -347,9 +389,13 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       case 3: /* LDA C(m) */
       {
         int32_t index = INT;
-        (void)index;
-        fprintf(stderr, "Load address operations not implemented yet\n");
-        exit(1);
+        aint clos = callstack_closure(state->callstack);
+        if (UNBOXED(clos) && UNBOX(clos) == 0) {
+          failure("LDA C(%d): no closure in current frame\n", index);
+        }
+
+        aint ref = closure_capture_ref(clos, (uint32_t)index);
+        callstack_push_operand(state->callstack, ref); // direct-address ref
       } break;
       default:
         FAIL;
@@ -391,9 +437,21 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       } break;
 
       case 3: /* ST C(m) */
-        fprintf(stderr, "Closure variables not implemented yet\n");
-        exit(1);
-        break;
+      {
+        int32_t index = INT;
+        aint value = callstack_pop_operand(state->callstack);
+
+        aint clos = callstack_closure(state->callstack);
+        if (UNBOXED(clos) && UNBOX(clos) == 0) {
+          failure("ST C(%d): no closure in current frame\n", index);
+        }
+
+        aint ref = closure_capture_ref(clos, (uint32_t)index);
+        aint *cell = callstack_resolve_ref(state->callstack, ref);
+        *cell = value;
+
+        callstack_push_operand(state->callstack, value);
+      } break;
 
       default:
         FAIL;
@@ -439,41 +497,99 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       } break;
 
       case 3: /* CBEGIN */
-        fprintf(stderr, "CBEGIN instruction not implemented yet\n");
-        exit(1);
-        break;
+      {
+        int nargs = INT;
+        int nlocals = INT;
+
+        if (callstack_nframes(state->callstack) == 0)
+          callstack_push_frame(state->callstack, 0, (uint32_t)nargs);
+
+        assert((uint32_t)nargs == callstack_nargs(state->callstack));
+
+        DBG("CBEGIN\t%d\t%d", nargs, nlocals);
+        callstack_alloc_locals(state->callstack, (uint32_t)nlocals);
+      } break;
 
       case 4: /* CLOSURE */
-        // DBG("CLOSURE\t0x%.8x", INT);
-        fprintf(stderr, "CLOSURE instruction not implemented yet\n");
-        exit(1);
-        {
-          int n = INT;
-          for (int i = 0; i < n; i++) {
-            switch (BYTE) {
-            case 0:
-              DBG("G(%d)", INT);
-              break;
-            case 1:
-              DBG("L(%d)", INT);
-              break;
-            case 2:
-              DBG("A(%d)", INT);
-              break;
-            case 3:
-              DBG("C(%d)", INT);
-              break;
-            default:
-              FAIL;
+      {
+        int32_t l_offset = INT;
+        DBG("CLOSURE\t0x%.8x", l_offset);
+
+        int n = INT;
+
+        // args[0] = entry pointer, args[1..n] = captured refs
+        aint *args = alloca(sizeof(aint) * (n + 1));
+        args[0] = (aint)(base_ip + l_offset);
+
+        for (int i = 0; i < n; i++) {
+          switch (BYTE) {
+          case 0: { // G(m)
+            uint32_t index = INT;
+            DBG(" G(%d)", index);
+            args[i + 1] = (aint)&state->globals[index];
+          } break;
+
+          case 1: { // L(m)
+            uint32_t index = INT;
+            DBG(" L(%d)", index);
+            aint ref = (aint)callstack_local_addr(state->callstack, index);
+            args[i + 1] = (aint)callstack_resolve_ref(state->callstack, ref);
+          } break;
+
+          case 2: { // A(m)
+            uint32_t index = INT;
+            DBG(" A(%d)", index);
+            aint ref = (aint)callstack_arg_addr(state->callstack, index);
+            args[i + 1] = (aint)callstack_resolve_ref(state->callstack, ref);
+          } break;
+
+          case 3: { // C(m)
+            uint32_t index = INT;
+            DBG(" C(%d)", index);
+
+            aint clos = callstack_closure(state->callstack);
+            if (UNBOXED(clos) && UNBOX(clos) == 0) {
+              failure(
+                  "CLOSURE: capture C(%u) but no closure in current frame\n",
+                  index);
             }
+
+            // берём ref на captured cell из текущего closure
+            args[i + 1] = closure_capture_ref(clos, index);
+          } break;
+
+          default:
+            FAIL;
           }
-        };
-        break;
+        }
+
+        aint clos_obj = (aint)Bclosure(args, BOX(n));
+        callstack_push_operand(state->callstack, clos_obj);
+      } break;
 
       case 5: /* CALLC */
-        fprintf(stderr, "CALLC instruction not implemented yet\n");
-        exit(1);
-        break;
+      {
+        int n = INT;
+        uint32_t ret_off = (uint32_t)(state->ip - base_ip);
+
+        // stack: ... [closure][arg0]...[arg(n-1)] (top = arg(n-1))
+        aint *tmp = alloca(sizeof(aint) * (size_t)n);
+
+        for (int i = n - 1; i >= 0; --i) {
+          tmp[i] = callstack_pop_operand(state->callstack);
+        }
+
+        aint clos = callstack_pop_operand(state->callstack);
+
+        for (int i = 0; i < n; ++i) {
+          callstack_push_operand(state->callstack, tmp[i]);
+        }
+
+        void *entry = closure_entry_ptr(clos);
+
+        callstack_push_cframe(state->callstack, clos, ret_off, (uint32_t)n);
+        state->ip = (char *)entry;
+      } break;
 
       case 6: /* CALL */
       {
