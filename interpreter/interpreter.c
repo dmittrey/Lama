@@ -39,6 +39,7 @@ extern aint LtagHash(char *s);
 extern aint Btag(void *d, aint t, aint n);
 
 extern aint Barray_patt(void *d, aint n);
+extern void Bmatch_failure(void *v, char *fname, aint line, aint col);
 
 static inline uint8_t read_u8(interpreter_state_t *st) {
   return (uint8_t)*st->ip++;
@@ -159,9 +160,10 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         char *tag = STRING;
         int32_t arity = INT;
+        DBG("SEXP (%s)\n", tag);
 
-        void *tagp = Bstring((aint *)&tag);
-        callstack_push_operand(state->callstack, (aint)tagp);
+        aint th = LtagHash(tag);
+        callstack_push_operand(state->callstack, th);
         // arg0 , ... , argN-1 , tag
         void *r = Bsexp(
             callstack_n_last_operands_sequence(state->callstack, arity + 1),
@@ -175,6 +177,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         aint val = callstack_pop_operand(state->callstack);
         aint ref = callstack_pop_operand(state->callstack);
+        DBG("STI\n");
 
         aint *addr = callstack_resolve_ref(state->callstack, ref);
         *addr = val;
@@ -186,6 +189,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         aint val = callstack_pop_operand(state->callstack);
         aint sec_op = callstack_pop_operand(state->callstack);
+        DBG("STA\n");
 
         if (UNBOXED(sec_op)) {
           /* aggregate: agg idx val */
@@ -212,7 +216,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       case 6: /* END */
       case 7: /* RET */
       {
-        DBG("END/RET");
+        DBG("END/RET\n");
 
         uint32_t callee_nargs = callstack_nargs(state->callstack);
         aint callee_ret = callstack_pop_operand(state->callstack);
@@ -241,7 +245,6 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         aint v = callstack_pop_operand(state->callstack);
         DBG("DUP");
-        // TODO Lclone for agregates??
         callstack_push_operand(state->callstack, v);
         callstack_push_operand(state->callstack, v);
       } break;
@@ -259,7 +262,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         aint idx = callstack_pop_operand(state->callstack);
         aint agg = callstack_pop_operand(state->callstack);
-
+        DBG("ELEM\n");
         void *r = Belem((void *)agg, idx);
         callstack_push_operand(state->callstack, (aint)r);
       } break;
@@ -430,7 +433,9 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         break;
 
       case 4: /* CLOSURE */
-        DBG("CLOSURE\t0x%.8x", INT);
+        // DBG("CLOSURE\t0x%.8x", INT);
+        fprintf(stderr, "CLOSURE instruction not implemented yet\n");
+        exit(1);
         {
           int n = INT;
           for (int i = 0; i < n; i++) {
@@ -499,8 +504,11 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         int line = INT;
         int col = INT;
-        fprintf(stderr, "Pattern matching failure at %d:%d\n", line, col);
-        exit(1);
+        char mainf[] = "main";
+
+        aint p = callstack_pop_operand(state->callstack);
+
+        Bmatch_failure((void *)p, mainf, line, col);
       } break;
 
       case 10: /* LINE */
