@@ -30,6 +30,8 @@ extern aint Ls__Infix_6161(void *p, void *q); /* == */
 extern aint Ls__Infix_62(void *p, void *q);   /* >  */
 extern aint Ls__Infix_6261(void *p, void *q); /* >= */
 
+extern void *Bstring(aint *args);
+
 static inline uint8_t read_u8(interpreter_state_t *st) {
   return (uint8_t)*st->ip++;
 }
@@ -137,10 +139,12 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
 
       case 1: /* STRING */
       {
-        int32_t str_idx = INT;
-        DBG("STRING IDX\t%d", str_idx);
-        // TODO alloca in GC heap
-        callstack_push_operand(state->callstack, BOX(str_idx));
+        char *str = STRING;
+        DBG("STRING (%s)\n", str);
+
+        void *r = Bstring((aint *)&str); // Allocate string in GC heap same as
+                                         // in string table in .bc
+        callstack_push_operand(state->callstack, (aint)r);
       } break;
 
       case 2: /* SEXP */
