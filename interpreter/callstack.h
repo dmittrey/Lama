@@ -10,8 +10,14 @@
 struct callstack_t;
 
 /* Helpers */
+uint32_t callstack_nlocals(struct callstack_t *s);
 uint32_t callstack_nargs(struct callstack_t *s);
 size_t callstack_nframes(struct callstack_t *s);
+
+/* Reference */
+aint *callstack_local_addr(struct callstack_t *s, uint32_t index);
+aint *callstack_arg_addr(struct callstack_t *s, uint32_t index);
+aint *callstack_resolve_ref(struct callstack_t *s, aint ref);
 
 /* Lifecycle */
 struct callstack_t *create_callstack();

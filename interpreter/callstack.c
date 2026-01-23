@@ -11,6 +11,8 @@
 #define CALLSTACK_INITIAL_SIZE 64
 #define CALLSTACK_MAX_SIZE 1024
 
+#define REF_POOL_SIZE 2048
+
 #define CS_ASSERT_UNBOXED(memo, x)                                             \
   do {                                                                         \
     if (!UNBOXED(x)) {                                                         \
@@ -70,21 +72,31 @@ static inline aint word_to_aint(csword_t w) {
   return v;
 }
 
+typedef enum ref_kind {
+  REF_LOCAL = 1,
+  REF_ARG = 2,
+} ref_kind_e;
+
+typedef struct refdesc_t {
+  uint8_t kind;   /* ref_kind_t */
+  uint16_t index; /* local/arg index */
+} refdesc_t;
+
 typedef struct callstack_t {
   /* Virtual regs */
   size_t fp; /* base of BOX(nlocals) for current frame */
   size_t sp; /* index of next free word */
+  size_t rp; // Ref pointer (next free idx in refpool)
 
   /* Internal */
   size_t capacity; /* allocated capacity (aint slots) */
-
-  /* Prevent underflow */
-  // TODO Переделать на секцию активации на дне стека чтобы при обращении можно
-  // было почистить и вернуть в pool
   size_t nframes;
 
   /* RAM layout */
   csword_t *ram_layout;
+
+  /* Reference pool */
+  refdesc_t *ref_pool;
 } callstack_t;
 
 /* Helpers */
@@ -170,6 +182,17 @@ static inline size_t operands_base_idx(callstack_t *s) {
   return noperands_base_idx(s) + 1;
 }
 
+/* slot helpers */
+static inline aint *local_slot_addr(callstack_t *s, uint32_t index) {
+  size_t base = locals_base_idx(s);
+  return (aint *)&s->ram_layout[base + index];
+}
+
+static inline aint *arg_slot_addr(callstack_t *s, uint32_t index) {
+  size_t base = args_base_idx(s);
+  return (aint *)&s->ram_layout[base + index];
+}
+
 /* noperands etc. */
 static inline uint32_t noperands(callstack_t *s) {
   aint v = word_to_aint(s->ram_layout[noperands_base_idx(s)]);
@@ -178,8 +201,75 @@ static inline uint32_t noperands(callstack_t *s) {
 }
 
 /* Public Helpers */
+uint32_t callstack_nlocals(callstack_t *s) { return nlocals(s); }
 uint32_t callstack_nargs(callstack_t *s) { return nargs(s); }
 size_t callstack_nframes(callstack_t *s) { return s->nframes; }
+
+/* Reference */
+aint *callstack_local_addr(callstack_t *s, uint32_t index) {
+  uint32_t nlocals_ = nlocals(s);
+  if (index >= nlocals_) {
+    fprintf(stderr, "Invalid local ref: index %u, nlocals %u\n", index,
+            nlocals_);
+    exit(1);
+  }
+
+  if (s->rp >= REF_POOL_SIZE) {
+    fprintf(stderr, "ref_pool exhausted (size=%d)\n", REF_POOL_SIZE);
+    exit(1);
+  }
+
+  refdesc_t *d = &s->ref_pool[s->rp++];
+  d->kind = (uint8_t)REF_LOCAL;
+  d->index = (uint16_t)index;
+
+  return (aint *)d;
+}
+aint *callstack_arg_addr(callstack_t *s, uint32_t index) {
+  uint32_t nargs_ = nargs(s);
+  if (index >= nargs_) {
+    fprintf(stderr, "Invalid arg ref: index %u, nargs %u\n", index, nargs_);
+    exit(1);
+  }
+
+  if (s->rp >= REF_POOL_SIZE) {
+    fprintf(stderr, "ref_pool exhausted (size=%d)\n", REF_POOL_SIZE);
+    exit(1);
+  }
+
+  refdesc_t *d = &s->ref_pool[s->rp++];
+  d->kind = (uint8_t)REF_ARG;
+  d->index = (uint16_t)index;
+
+  return (aint *)d;
+}
+aint *callstack_resolve_ref(callstack_t *s, aint ref) {
+  if (UNBOXED(ref)) {
+    fprintf(stderr, "resolve_ref: boxed ref expected, got unboxed\n");
+    exit(1);
+  }
+
+  void *p = (void *)ref;
+
+  /* descriptor case: ref points into ref_pool */
+  if (p >= (void *)s->ref_pool && p < (void *)(s->ref_pool + REF_POOL_SIZE)) {
+
+    refdesc_t *d = (refdesc_t *)p;
+
+    switch ((ref_kind_e)d->kind) {
+    case REF_LOCAL:
+      return local_slot_addr(s, (uint32_t)d->index);
+    case REF_ARG:
+      return arg_slot_addr(s, (uint32_t)d->index);
+    default:
+      fprintf(stderr, "resolve_ref: bad ref kind %u\n", (unsigned)d->kind);
+      exit(1);
+    }
+  }
+
+  /* direct-address case (globals, or any external aint-cell pointer) */
+  return (aint *)p;
+}
 
 /* Lifecycle */
 callstack_t *create_callstack() {
@@ -197,9 +287,19 @@ callstack_t *create_callstack() {
     return NULL;
   }
 
+  /* Reference pool */
+  stack->ref_pool =
+      (refdesc_t *)malloc((size_t)REF_POOL_SIZE * sizeof(refdesc_t));
+  if (!stack->ref_pool) {
+    free(stack->ram_layout);
+    free(stack);
+    return NULL;
+  }
+
   /* Virt regs */
   stack->fp = 0;
   stack->sp = 0;
+  stack->rp = 0;
 
   /* Internal */
   stack->capacity = (size_t)CALLSTACK_INITIAL_SIZE;
@@ -211,6 +311,7 @@ callstack_t *create_callstack() {
 
 void destroy_callstack(callstack_t *stack) {
   if (stack) {
+    free(stack->ref_pool);
     free(stack->ram_layout);
     free(stack);
   }

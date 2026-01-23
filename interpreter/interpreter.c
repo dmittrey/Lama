@@ -170,12 +170,9 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         aint val = callstack_pop_operand(state->callstack);
         aint ref = callstack_pop_operand(state->callstack);
 
-        if (UNBOXED(ref)) {
-          failure("STI: reference expected, got unboxed %" PRIdAI "\n",
-                  UNBOX(ref));
-        }
+        aint *addr = callstack_resolve_ref(state->callstack, ref);
+        *addr = val;
 
-        Bsta((void *)ref, ref, (void *)val);
         callstack_push_operand(state->callstack, val);
       } break;
 
@@ -184,17 +181,18 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         aint val = callstack_pop_operand(state->callstack);
         aint sec_op = callstack_pop_operand(state->callstack);
 
-        // case AGGREGATE: agg idx val
         if (UNBOXED(sec_op)) {
+          /* aggregate: agg idx val */
           aint idx = sec_op;
           aint agg = callstack_pop_operand(state->callstack);
-          Bsta((void *)agg, idx, (void *)val);
-        }
-        // case REF: ref val
-        else {
+          (void)Bsta((void *)agg, idx, (void *)val);
+        } else {
+          /* ref: ref val */
           aint ref = sec_op;
-          Bsta((void *)ref, ref, (void *)val);
+          aint *addr = callstack_resolve_ref(state->callstack, ref);
+          *addr = val;
         }
+
         callstack_push_operand(state->callstack, val);
       } break;
 
@@ -304,8 +302,24 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
     case 3: /* LDA operations - Load Address */
       switch (l) {
       case 0: /* LDA G(m) */
+      {
+        int32_t index = INT;
+        assert(index >= 0 && index < state->num_globals);
+        aint *ref = (aint *)&state->globals[index];
+        callstack_push_operand(state->callstack, (aint)ref);
+      } break;
       case 1: /* LDA L(m) */
+      {
+        int32_t index = INT;
+        aint *refp = callstack_local_addr(state->callstack, (uint32_t)index);
+        callstack_push_operand(state->callstack, (aint)refp);
+      } break;
       case 2: /* LDA A(m) */
+      {
+        int32_t index = INT;
+        aint *refp = callstack_arg_addr(state->callstack, (uint32_t)index);
+        callstack_push_operand(state->callstack, (aint)refp);
+      } break;
       case 3: /* LDA C(m) */
       {
         int32_t index = INT;
