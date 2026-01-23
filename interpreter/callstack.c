@@ -328,3 +328,11 @@ void callstack_push_operand(callstack_t *stack, aint value) {
 
   PUSH(stack, value);
 }
+// aint* -> aint(мы просто указатель в кучу интерпретируем adaptive int64_t)
+
+aint *callstack_n_operands_sequence(callstack_t *stack, uint32_t n) {
+  uint32_t noperands_ = noperands(stack);
+
+  size_t base = operands_base_idx(stack);
+  return (aint *)&stack->ram_layout[base + n - 1];
+}

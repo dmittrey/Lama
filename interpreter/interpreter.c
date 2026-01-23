@@ -1,9 +1,34 @@
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "../runtime/runtime.h"
 #include "bytecode.h"
+#include "callstack.h"
 #include "interpreter.h"
 #include "state.h"
+
+extern aint Lread(void);
+extern aint Lwrite(aint n);
+extern aint Llength(void *p);
+extern void *Lstring(aint *args);
+extern void *Barray(aint *args, aint bn);
+
+extern aint Ls__Infix_3333(void *p, void *q); /* !! */
+extern aint Ls__Infix_3361(void *p, void *q); /* != */
+extern aint Ls__Infix_3838(void *p, void *q); /* && */
+extern aint Ls__Infix_37(void *p, void *q);   /* %  */
+extern aint Ls__Infix_42(void *p, void *q);   /* *  */
+extern aint Ls__Infix_43(void *p, void *q);   /* +  */
+extern aint Ls__Infix_45(void *p, void *q);   /* -  */
+extern aint Ls__Infix_47(void *p, void *q);   /* /  */
+extern aint Ls__Infix_60(void *p, void *q);   /* <  */
+extern aint Ls__Infix_6061(void *p, void *q); /* <= */
+extern aint Ls__Infix_6161(void *p, void *q); /* == */
+extern aint Ls__Infix_62(void *p, void *q);   /* >  */
+extern aint Ls__Infix_6261(void *p, void *q); /* >= */
 
 static inline uint8_t read_u8(interpreter_state_t *st) {
   return (uint8_t)*st->ip++;
@@ -15,6 +40,8 @@ static inline int32_t read_i32(interpreter_state_t *st) {
   st->ip += sizeof(v);
   return v;
 }
+
+static inline bool as_bool(aint v) { return UNBOXED(v) ? (UNBOX(v) != 0) : 1; }
 
 void interpret_bc(FILE *f, interpreter_state_t *state) {
 #define INT (read_i32(state))
@@ -45,57 +72,58 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
 
     /* BINOP */
     case 0: {
-      int32_t b = callstack_pop_operand(state->callstack);
-      int32_t a = callstack_pop_operand(state->callstack);
-      int32_t result;
+      aint b = callstack_pop_operand(state->callstack);
+      aint a = callstack_pop_operand(state->callstack);
+      int64_t boxed_res;
 
       switch (l) {
       case 1:
-        result = a + b;
+        boxed_res = Ls__Infix_43((void *)a, (void *)b);
         break; /* + */
       case 2:
-        result = a - b;
+        boxed_res = Ls__Infix_45((void *)a, (void *)b);
         break; /* - */
       case 3:
-        result = a * b;
+        boxed_res = Ls__Infix_42((void *)a, (void *)b);
         break; /* * */
       case 4:
-        result = a / b;
+        boxed_res = Ls__Infix_47((void *)a, (void *)b);
         break; /* / */
       case 5:
-        result = a % b;
+        boxed_res = Ls__Infix_37((void *)a, (void *)b);
         break; /* % */
       case 6:
-        result = a < b;
+        boxed_res = Ls__Infix_60((void *)a, (void *)b);
         break; /* < */
       case 7:
-        result = a <= b;
+        boxed_res = Ls__Infix_6061((void *)a, (void *)b);
         break; /* <= */
       case 8:
-        result = a > b;
+        boxed_res = Ls__Infix_62((void *)a, (void *)b);
         break; /* > */
       case 9:
-        result = a >= b;
+        boxed_res = Ls__Infix_6261((void *)a, (void *)b);
         break; /* >= */
       case 10:
-        result = a == b;
+        boxed_res = Ls__Infix_6161((void *)a, (void *)b);
         break; /* == */
       case 11:
-        result = a != b;
+        boxed_res = Ls__Infix_3361((void *)a, (void *)b);
         break; /* != */
       case 12:
-        result = a && b;
+        boxed_res = Ls__Infix_3838((void *)a, (void *)b);
         break; /* && */
       case 13:
-        result = a || b;
+        boxed_res = Ls__Infix_3333((void *)a, (void *)b);
         break; /* !! */
       default:
         fprintf(stderr, "Unsupported BINOP %d\n", l);
         exit(1);
       }
 
-      DBG("%d %s %d = %d", a, ops[l - 1], b, result);
-      callstack_push_operand(state->callstack, result);
+      DBG("%" PRIdAI " %s %" PRIdAI " = %" PRIdAI, UNBOX(a), ops[l - 1],
+          UNBOX(b), UNBOX(boxed_res));
+      callstack_push_operand(state->callstack, boxed_res);
     } break;
 
     case 1:
@@ -104,14 +132,15 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         int32_t value = INT;
         DBG("CONST\t%d", value);
-        callstack_push_operand(state->callstack, value);
+        callstack_push_operand(state->callstack, BOX(value));
       } break;
 
       case 1: /* STRING */
       {
         int32_t str_idx = INT;
         DBG("STRING IDX\t%d", str_idx);
-        callstack_push_operand(state->callstack, str_idx);
+        // TODO alloca in GC heap
+        callstack_push_operand(state->callstack, BOX(str_idx));
       } break;
 
       case 2: /* SEXP */
@@ -144,13 +173,15 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       case 6: /* END */
       case 7: /* RET */
       {
-        DBG("END");
+        DBG("END/RET");
 
         uint32_t callee_nargs = callstack_nargs(state->callstack);
-        int32_t callee_ret = callstack_pop_operand(state->callstack);
-        char *ret_ip = callstack_pop_frame(state->callstack);
+        aint callee_ret = callstack_pop_operand(state->callstack);
 
-        if (ret_ip == NULL) {
+        uint32_t ret_off = callstack_pop_frame(state->callstack);
+
+        // main frame exit
+        if (ret_off == 0) {
           goto stop;
         }
 
@@ -159,7 +190,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         }
 
         callstack_push_operand(state->callstack, callee_ret);
-        state->ip = ret_ip;
+        state->ip = base_ip + ret_off;
       } break;
 
       case 8: /* DROP */
@@ -169,17 +200,18 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
 
       case 9: /* DUP */
       {
-        int32_t value = callstack_pop_operand(state->callstack);
-        DBG("DUP\t%d", value);
-        callstack_push_operand(state->callstack, value);
-        callstack_push_operand(state->callstack, value);
+        aint v = callstack_pop_operand(state->callstack);
+        DBG("DUP");
+        // TODO Lclone for agregates??
+        callstack_push_operand(state->callstack, v);
+        callstack_push_operand(state->callstack, v);
       } break;
 
       case 10: /* SWAP */
       {
-        int32_t a = callstack_pop_operand(state->callstack);
-        int32_t b = callstack_pop_operand(state->callstack);
-        DBG("SWAP\t%d\t%d", a, b);
+        aint a = callstack_pop_operand(state->callstack);
+        aint b = callstack_pop_operand(state->callstack);
+        DBG("SWAP");
         callstack_push_operand(state->callstack, a);
         callstack_push_operand(state->callstack, b);
       } break;
@@ -211,7 +243,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       case 1: /* LD L(m) */
       {
         int32_t index = INT;
-        int32_t value = callstack_get_local(state->callstack, index);
+        aint value = callstack_get_local(state->callstack, (uint32_t)index);
         DBG("LD\tL(%d)", index);
         callstack_push_operand(state->callstack, value);
       } break;
@@ -219,8 +251,8 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       case 2: /* LD A(m) */
       {
         int32_t index = INT;
-        int32_t value = callstack_get_arg(state->callstack, index);
-        DBG("LD\tL(%d)", index);
+        aint value = callstack_get_arg(state->callstack, (uint32_t)index);
+        DBG("LD\tA(%d)", index);
         callstack_push_operand(state->callstack, value);
       } break;
 
@@ -256,7 +288,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       case 0: /* ST G(m) */
       {
         int32_t index = INT;
-        int32_t value = callstack_pop_operand(state->callstack);
+        aint value = callstack_pop_operand(state->callstack);
         if (index >= 0 && (size_t)index < state->num_globals) {
           DBG("ST\tG(%d)", index);
           state->globals[index] = value;
@@ -270,18 +302,18 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       case 1: /* ST L(m) */
       {
         int32_t index = INT;
-        int32_t value = callstack_pop_operand(state->callstack);
+        aint value = callstack_pop_operand(state->callstack);
         DBG("ST\tL(%d)", index);
-        callstack_set_local(state->callstack, index, value);
+        callstack_set_local(state->callstack, (uint32_t)index, value);
         callstack_push_operand(state->callstack, value);
       } break;
 
       case 2: /* ST A(m) */
       {
         int32_t index = INT;
-        int32_t value = callstack_pop_operand(state->callstack);
+        aint value = callstack_pop_operand(state->callstack);
         DBG("ST\tA(%d)", index);
-        callstack_set_arg(state->callstack, index, value);
+        callstack_set_arg(state->callstack, (uint32_t)index, value);
         callstack_push_operand(state->callstack, value);
       } break;
 
@@ -302,9 +334,10 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         int32_t l_offset = INT;
         DBG("CJMPz\t0x%.8x", l_offset);
 
-        int32_t value = callstack_pop_operand(state->callstack);
-        if (!value)
+        aint value = callstack_pop_operand(state->callstack);
+        if (!as_bool(value)) {
           state->ip = base_ip + l_offset;
+        }
       } break;
 
       case 1: /* CJMPnz */
@@ -312,10 +345,10 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         int32_t l_offset = INT;
         DBG("CJMPnz\t0x%.8x", l_offset);
 
-        // Jump if operand non-zero
-        int32_t value = callstack_pop_operand(state->callstack);
-        if (value)
+        aint value = callstack_pop_operand(state->callstack);
+        if (as_bool(value)) {
           state->ip = base_ip + l_offset;
+        }
       } break;
 
       case 2: /* BEGIN */
@@ -324,12 +357,12 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         int nlocals = INT;
 
         if (callstack_nframes(state->callstack) == 0)
-          callstack_push_frame(state->callstack, NULL, nargs);
+          callstack_push_frame(state->callstack, 0, (uint32_t)nargs);
 
-        assert(nargs == callstack_nargs(state->callstack));
+        assert((uint32_t)nargs == callstack_nargs(state->callstack));
 
         DBG("BEGIN\t%d\t%d", nargs, nlocals);
-        callstack_alloc_locals(state->callstack, nlocals);
+        callstack_alloc_locals(state->callstack, (uint32_t)nlocals);
       } break;
 
       case 3: /* CBEGIN */
@@ -337,7 +370,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         exit(1);
         break;
 
-      case 4:
+      case 4: /* CLOSURE */
         DBG("CLOSURE\t0x%.8x", INT);
         {
           int n = INT;
@@ -371,9 +404,9 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         int offset = INT;
         int nargs = INT;
-        char *ret_ip = state->ip;
+        uint32_t ret_off = (uint32_t)(state->ip - base_ip);
 
-        callstack_push_frame(state->callstack, ret_ip, nargs);
+        callstack_push_frame(state->callstack, ret_off, (uint32_t)nargs);
         state->ip = base_ip + offset;
       } break;
 
@@ -424,39 +457,46 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       switch (l) {
       case 0: /* Lread */
       {
-        int32_t value;
-        fprintf(stdout, " > ");
-        if (scanf("%d", &value) == 1) {
-          callstack_push_operand(state->callstack, value);
-        } else {
-          fprintf(stderr, "Failed to read integer\n");
-          exit(1);
-        }
+        fprintf(stdout, " ");
+        aint v = Lread();
+        callstack_push_operand(state->callstack, v);
       } break;
 
       case 1: /* Lwrite */
       {
-        int32_t value = callstack_pop_operand(state->callstack);
-        printf("%d\n", value); /* НЕ под DEBUG */
-        callstack_push_operand(state->callstack, value);
+        aint v = callstack_pop_operand(state->callstack);
+        Lwrite(v);
+        callstack_push_operand(state->callstack, v);
       } break;
 
       case 2: /* Llength */
-        fprintf(stderr, "Llength not implemented yet\n");
-        exit(1);
-        break;
+      {
+        aint v = callstack_pop_operand(state->callstack);
+        aint r = Llength((void *)v);
+        callstack_push_operand(state->callstack, r);
+      } break;
 
       case 3: /* Lstring */
-        fprintf(stderr, "Lstring not implemented yet\n");
-        exit(1);
-        break;
+      {
+        aint v = callstack_pop_operand(state->callstack);
+
+        void *s = Lstring(&v);
+        callstack_push_operand(state->callstack, (aint)s);
+      } break;
 
       case 4: /* Barray */
       {
-        int length = INT;
-        (void)length;
-        fprintf(stderr, "Barray not implemented yet\n");
-        exit(1);
+        int n = INT;
+        if (n < 0) {
+          fprintf(stderr, "Barray: negative length %d\n", n);
+          exit(1);
+        }
+
+        aint *elems = callstack_n_operands_sequence(state->callstack, n);
+        void *a = Barray(elems, n);
+        for (size_t i = 0; i < n; i++)
+          callstack_pop_operand(state->callstack);
+        callstack_push_operand(state->callstack, (aint)a);
       } break;
 
       default:
