@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 
+#include "../runtime/runtime.h"
+
 #include "bytecode.h"
 #include "callstack.h"
 
@@ -12,7 +14,7 @@ typedef struct {
   char *ip; /* address of current instruction */
 
   /* Memory areas */
-  int32_t *globals;   /* global variables array */
+  aint *globals;      /* global variables array */
   size_t num_globals; /* number of global variables */
 
   /* Call stack opaque */

@@ -24,7 +24,7 @@ interpreter_state_t *create_interpreter_state(bytefile *bf) {
   /* Memory areas */
   state->num_globals = bf->global_area_size;
   if (state->num_globals > 0) {
-    state->globals = calloc(state->num_globals, sizeof(int32_t));
+    state->globals = calloc(bf->global_area_size, sizeof(aint));
     if (!state->globals) {
       fprintf(stderr, "Failed to allocate global variables\n");
       destroy_callstack(state->callstack);
