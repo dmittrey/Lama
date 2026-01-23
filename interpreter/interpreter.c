@@ -4,7 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../runtime/gc.h"
 #include "../runtime/runtime.h"
+
 #include "bytecode.h"
 #include "callstack.h"
 #include "interpreter.h"
@@ -34,11 +36,16 @@ extern void *Bstring(aint *args);
 extern void *Bsexp(aint *args, aint bn);
 extern void *Bsta(void *x, aint i, void *v);
 extern void *Belem(void *p, aint i);
-extern aint Bsexp_tag_patt(void *x);
 extern aint LtagHash(char *s);
 extern aint Btag(void *d, aint t, aint n);
 
+extern aint Bstring_patt(void *x, void *y);
 extern aint Barray_patt(void *d, aint n);
+extern aint Bstring_tag_patt(void *x);
+extern aint Barray_tag_patt(void *x);
+extern aint Bsexp_tag_patt(void *x);
+extern aint Bclosure_tag_patt(void *x);
+
 extern void Bmatch_failure(void *v, char *fname, aint line, aint col);
 
 static inline uint8_t read_u8(interpreter_state_t *st) {
@@ -535,9 +542,81 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       break;
 
     case 6: /* Pattern matching */
-      fprintf(stderr, "Pattern matching not implemented yet\n");
-      exit(1);
-      break;
+      switch (l) {
+      case 0: /* PATT =str */
+      {
+        aint p1 = callstack_pop_operand(state->callstack);
+        aint p2 = callstack_pop_operand(state->callstack);
+
+        aint r = Bstring_patt((void *)p1, (void *)p2);
+
+        callstack_push_operand(state->callstack, r);
+      } break;
+
+      case 1: /* PATT #string */
+      {
+        aint p = callstack_pop_operand(state->callstack);
+
+        aint r = Bstring_tag_patt((void *)p);
+
+        callstack_push_operand(state->callstack, r);
+      } break;
+
+      case 2: /* PATT #array */
+      {
+        aint p = callstack_pop_operand(state->callstack);
+
+        aint r = Barray_tag_patt((void *)p);
+
+        callstack_push_operand(state->callstack, r);
+      } break;
+
+      case 3: /* PATT #sexp */
+      {
+        aint p = callstack_pop_operand(state->callstack);
+
+        aint r = Bsexp_tag_patt((void *)p);
+
+        callstack_push_operand(state->callstack, r);
+      } break;
+
+      case 4: /* PATT #ref */
+      {
+        aint p = callstack_pop_operand(state->callstack);
+
+        // Ref is boxed
+        if (!UNBOXED(p))
+          callstack_push_operand(state->callstack, BOX(1));
+
+        // Fallback
+        callstack_push_operand(state->callstack, BOX(0));
+      } break;
+
+      case 5: /* PATT #val */
+      {
+        aint p = callstack_pop_operand(state->callstack);
+
+        // imm is unboxed
+        if (UNBOXED(p))
+          callstack_push_operand(state->callstack, BOX(1));
+
+        // Fallback
+        callstack_push_operand(state->callstack, BOX(0));
+      } break;
+
+      case 6: /* PATT #fun */
+      {
+        aint p = callstack_pop_operand(state->callstack);
+
+        aint r = Bclosure_tag_patt((void *)p);
+
+        // Fallback
+        callstack_push_operand(state->callstack, r);
+      } break;
+
+      default:
+        FAIL;
+      }
 
     case 7: /* Built-in functions */
     {
