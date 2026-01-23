@@ -320,6 +320,30 @@ aint callstack_pop_operand(callstack_t *stack) {
 
   return POP(stack); // Free boxed val?
 }
+/*
+TODO What to do with extra_roots?
+
+When I’m dealing with `Bstring`, `Bsexp`, etc., they allocate duplicates of
+parts of aggregate objects in the GC heap, and they also register handlers for
+these arguments—placed on the VM stack—as extra roots. I’m concerned that, in
+the future, I won’t have enough capacity to register additional extra roots. In
+particular, dangling operands (used in a constructor and then popped) end up
+below `gc_vm_bottom`, are not indexed as roots, and the GC therefore cannot
+remove them from the `extra_roots` collection.
+*/
+
+void callstack_pop_n_operands(struct callstack_t *stack, uint32_t n) {
+  uint32_t noperands_ = noperands(stack);
+  assert(noperands_ >= n);
+
+  // Update noperands
+  size_t nops_base = noperands_base_idx(stack);
+  stack->ram_layout[nops_base] = aint_to_word(BOX(noperands_ - n));
+
+  // Update sp and gc ptrs
+  stack->sp -= n;
+  gc_sync(stack);
+}
 void callstack_push_operand(callstack_t *stack, aint value) {
   uint32_t noperands_ = noperands(stack);
 
@@ -329,10 +353,10 @@ void callstack_push_operand(callstack_t *stack, aint value) {
   PUSH(stack, value);
 }
 // aint* -> aint(мы просто указатель в кучу интерпретируем adaptive int64_t)
-
-aint *callstack_n_operands_sequence(callstack_t *stack, uint32_t n) {
+aint *callstack_n_last_operands_sequence(callstack_t *stack, uint32_t n) {
   uint32_t noperands_ = noperands(stack);
+  assert(noperands_ >= n);
 
   size_t base = operands_base_idx(stack);
-  return (aint *)&stack->ram_layout[base + n - 1];
+  return (aint *)&stack->ram_layout[base + (noperands_ - n /*cnt of tail*/)];
 }

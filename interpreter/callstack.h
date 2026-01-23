@@ -31,7 +31,8 @@ void callstack_set_arg(struct callstack_t *stack, uint32_t index, aint value);
 
 /* Operands stack */
 aint callstack_pop_operand(struct callstack_t *stack);
+void callstack_pop_n_operands(struct callstack_t *stack, uint32_t n);
 void callstack_push_operand(struct callstack_t *stack, aint value);
-aint *callstack_n_operands_sequence(struct callstack_t *stack, uint32_t n);
+aint *callstack_n_last_operands_sequence(struct callstack_t *stack, uint32_t n);
 
 #endif

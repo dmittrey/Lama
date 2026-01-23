@@ -31,6 +31,7 @@ extern aint Ls__Infix_62(void *p, void *q);   /* >  */
 extern aint Ls__Infix_6261(void *p, void *q); /* >= */
 
 extern void *Bstring(aint *args);
+extern void *Bsexp(aint *args, aint bn);
 
 static inline uint8_t read_u8(interpreter_state_t *st) {
   return (uint8_t)*st->ip++;
@@ -151,10 +152,16 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         char *tag = STRING;
         int32_t arity = INT;
-        (void)tag;
-        (void)arity;
-        fprintf(stderr, "SEXP instruction not implemented yet\n");
-        exit(1);
+
+        void *tagp = Bstring((aint *)&tag);
+        callstack_push_operand(state->callstack, (aint)tagp);
+        // arg0 , ... , argN-1 , tag
+        void *r = Bsexp(
+            callstack_n_last_operands_sequence(state->callstack, arity + 1),
+            arity + 1);
+
+        callstack_pop_n_operands(state->callstack, arity + 1 /* With tag*/);
+        callstack_push_operand(state->callstack, (aint)r);
       } break;
 
       case 3: /* STI */
@@ -496,10 +503,9 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
           exit(1);
         }
 
-        aint *elems = callstack_n_operands_sequence(state->callstack, n);
+        aint *elems = callstack_n_last_operands_sequence(state->callstack, n);
         void *a = Barray(elems, n);
-        for (size_t i = 0; i < n; i++)
-          callstack_pop_operand(state->callstack);
+        callstack_pop_n_operands(state->callstack, n);
         callstack_push_operand(state->callstack, (aint)a);
       } break;
 
