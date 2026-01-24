@@ -165,6 +165,7 @@ static error_code_e op_sta(FILE *f, struct interpreter_state_t *state, char l) {
 static error_code_e op_jmp(FILE *f, struct interpreter_state_t *state, char l) {
   int offset = state_read_int(state);
   DBG("JMP\t0x%.8x", offset);
+  RETURN_IF_ERROR(state_jmp(state, offset));
   return ERROR_NONE;
 }
 

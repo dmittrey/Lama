@@ -25,6 +25,7 @@ struct callstack_t *state_cs(struct interpreter_state_t *state);
 int state_read_int(struct interpreter_state_t *state);
 char state_read_byte(struct interpreter_state_t *state);
 char *state_read_string(struct interpreter_state_t *state);
+error_code_e state_jmp(struct interpreter_state_t *state, int32_t offset);
 
 /* Globals */
 error_code_e state_get_glob(struct interpreter_state_t *state, uint32_t index,

@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* Structure internals */
 typedef struct interpreter_state_t {
@@ -82,14 +83,25 @@ struct callstack_t *state_cs(struct interpreter_state_t *state) {
   return state->callstack;
 }
 int state_read_int(interpreter_state_t *state) {
-  state->ip += sizeof(int);
-  return *(int *)(state->ip - sizeof(int));
+  int value = 0;
+  memcpy(&value, state->ip, sizeof(value));
+  state->ip += sizeof(value);
+  return value;
 }
 char state_read_byte(interpreter_state_t *state) {
   return (unsigned char)*state->ip++;
 }
 char *state_read_string(interpreter_state_t *state) {
   return get_string(state->bf, state_read_int(state));
+}
+error_code_e state_jmp(struct interpreter_state_t *state, int32_t offset) {
+  if (offset < 0)
+    return ERROR_JUMP_OFFSET_NEGATIVE;
+  if (offset >= state->bf->code_size)
+    return ERROR_JUMP_OFFSET_OUT_OF_RANGE;
+
+  state->ip = state->bf->code_ptr + offset;
+  return ERROR_NONE;
 }
 
 /* Globals */
