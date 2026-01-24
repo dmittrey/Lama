@@ -1,5 +1,6 @@
 .PHONY: all regression
 .PHONY: clean test regression regression-expressions regression-all uninstall install build
+.PHONY: vm-regression vm-regression-expressions
 
 INSTALL ?= install -v
 MKDIR ?= mkdir
@@ -32,6 +33,12 @@ regression:
 
 regression-expressions:
 	dune test regression_long
+
+vm-regression:
+	@./vm/regression/prepare_regression.sh
+
+vm-regression-expressions:
+	@./vm/regression/prepare_regression_long.sh
 
 clean:
 	@dune clean
