@@ -181,7 +181,9 @@ static error_code_e op_ret(FILE *f, struct interpreter_state_t *state, char l) {
 
 static error_code_e op_drop(FILE *f, struct interpreter_state_t *state,
                             char l) {
+  csval_t val;
   DBG("DROP");
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
   return ERROR_NONE;
 }
 
