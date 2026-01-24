@@ -212,7 +212,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         // arg0 , ... , argN-1 , tag
         void *r = Bsexp(
             callstack_n_last_operands_sequence(state->callstack, arity + 1),
-            arity + 1);
+            BOX(arity + 1));
 
         callstack_pop_n_operands(state->callstack, arity + 1 /* With tag*/);
         callstack_push_operand(state->callstack, (aint)r);
@@ -307,7 +307,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
       {
         aint idx = callstack_pop_operand(state->callstack);
         aint agg = callstack_pop_operand(state->callstack);
-        DBG("ELEM\n");
+        DBG("ELEM\t(idx=%lld)\n", UNBOX(idx));
         void *r = Belem((void *)agg, idx);
         callstack_push_operand(state->callstack, (aint)r);
       } break;
@@ -630,7 +630,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
 
         aint p = callstack_pop_operand(state->callstack);
 
-        aint r = Barray_patt((void *)p, size);
+        aint r = Barray_patt((void *)p, BOX(size));
 
         callstack_push_operand(state->callstack, r);
       } break;
@@ -643,7 +643,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
 
         aint p = callstack_pop_operand(state->callstack);
 
-        Bmatch_failure((void *)p, mainf, line, col);
+        Bmatch_failure((void *)p, mainf, BOX(line), BOX(col));
       } break;
 
       case 10: /* LINE */
@@ -775,7 +775,7 @@ void interpret_bc(FILE *f, interpreter_state_t *state) {
         }
 
         aint *elems = callstack_n_last_operands_sequence(state->callstack, n);
-        void *a = Barray(elems, n);
+        void *a = Barray(elems, BOX(n));
         callstack_pop_n_operands(state->callstack, n);
         callstack_push_operand(state->callstack, (aint)a);
       } break;
