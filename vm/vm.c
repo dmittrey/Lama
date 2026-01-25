@@ -34,6 +34,7 @@ extern void *Bsta(void *x, aint i, void *v);
 extern void *Belem(void *p, aint i);
 extern aint Btag(void *d, aint t, aint n);
 extern aint Barray_patt(void *d, aint n);
+extern void Bmatch_failure(void *v, char *fname, aint line, aint col);
 
 static char current_h = 0;
 
@@ -585,10 +586,16 @@ static error_code_e op_array(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_fail(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  int code = state_read_int(state);
-  int value = state_read_int(state);
-  DBG("FAIL\t%d", code);
-  DBG("%d", value);
+  int line = state_read_int(state);
+  int col = state_read_int(state);
+  char mainf[] = "main";
+
+  csval_t p_val;
+  aint p;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p_val));
+  RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+  DBG("FAIL\t%d %d", line, col);
+  Bmatch_failure((void *)p, mainf, BOX(line), BOX(col));
   return ERROR_NONE;
 }
 
