@@ -81,6 +81,7 @@ bytefile *parse_bc_file(char *fname) {
   file->public_ptr = (int *)file->buffer;
   file->string_ptr = file->buffer + public_bytes;
   file->code_ptr = file->string_ptr + string_bytes;
+  file->code_size = payload_bytes - public_bytes - string_bytes;
 
   file->global_ptr = (int *)calloc((size_t)file->global_area_size, sizeof(int));
   if (!file->global_ptr && file->global_area_size != 0) {
