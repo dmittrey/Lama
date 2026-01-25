@@ -1,4 +1,6 @@
 #include "state.h"
+#include "bytecode.h"
+#include "callstack.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +13,9 @@ typedef struct interpreter_state_t {
   /* Memory areas */
   aint *globals;      /* global variables array */
   size_t num_globals; /* number of global variables */
+
+  /* Call stack opaque */
+  struct callstack_t *callstack;
 
   /* Bytecode file */
   bytefile *bf; /* loaded bytecode file */
@@ -40,6 +45,14 @@ interpreter_state_t *create_interpreter_state(bytefile *bf) {
     state->globals = NULL;
   }
 
+  /* Create call stack */
+  state->callstack = create_callstack();
+  if (!state->callstack) {
+    fprintf(stderr, "Failed to create call stack\n");
+    free(state);
+    return NULL;
+  }
+
   /* Bytecode file */
   state->bf = bf;
 
@@ -50,7 +63,9 @@ void destroy_interpreter_state(interpreter_state_t *state) {
     if (state->globals) {
       free(state->globals);
     }
-
+    if (state->callstack) {
+      destroy_callstack(state->callstack);
+    }
     free(state);
   }
 }
@@ -62,6 +77,9 @@ char *state_base_ip(struct interpreter_state_t *state) {
 }
 uint32_t state_ip_off(interpreter_state_t *state) {
   return state->ip - state->bf->code_ptr;
+}
+struct callstack_t *state_cs(struct interpreter_state_t *state) {
+  return state->callstack;
 }
 int state_read_int(interpreter_state_t *state) {
   state->ip += sizeof(int);
