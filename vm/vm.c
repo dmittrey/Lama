@@ -32,6 +32,7 @@ extern aint LtagHash(char *);
 extern void *Bsexp(aint *args, aint bn);
 extern void *Bsta(void *x, aint i, void *v);
 extern void *Belem(void *p, aint i);
+extern aint Btag(void *d, aint t, aint n);
 
 static char current_h = 0;
 
@@ -548,8 +549,23 @@ static error_code_e op_call(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_tag(FILE *f, struct interpreter_state_t *state, char l) {
   char *tag = state_read_string(state);
   int arity = state_read_int(state);
-  DBG("TAG\t%s ", tag);
-  DBG("%d", arity);
+
+  aint r;
+  csval_t p_val;
+  aint p;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p_val));
+  RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+  aint th = LtagHash(tag);
+  aint an = BOX(arity);
+  DBG("TAG\t%s %d", tag, arity);
+  if (arity == 0 && UNBOXED(p)) {
+    /* immediate constructor  */
+    r = (UNBOX(p) == UNBOX(th)) ? BOX(1) : BOX(0);
+  } else {
+    /* sexp / array / other */
+    r = Btag((void *)p, th, an);
+  }
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
   return ERROR_NONE;
 }
 
