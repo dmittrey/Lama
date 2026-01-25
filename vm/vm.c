@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "../runtime/gc.h"
 #include "../runtime/runtime.h"
 
 #include "bytecode.h"
@@ -35,6 +36,12 @@ extern void *Belem(void *p, aint i);
 extern aint Btag(void *d, aint t, aint n);
 extern aint Barray_patt(void *d, aint n);
 extern void Bmatch_failure(void *v, char *fname, aint line, aint col);
+
+extern aint Bstring_patt(void *x, void *y);
+extern aint Bstring_tag_patt(void *x);
+extern aint Barray_tag_patt(void *x);
+extern aint Bsexp_tag_patt(void *x);
+extern aint Bclosure_tag_patt(void *x);
 
 static char current_h = 0;
 
@@ -606,52 +613,69 @@ static error_code_e op_line(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_patt_str(FILE *f, struct interpreter_state_t *state,
-                                char l) {
-  const char *pattern = pats[0];
-  DBG("PATT\t%s", pattern);
-  return ERROR_NONE;
-}
+static error_code_e op_patt(FILE *f, struct interpreter_state_t *state,
+                            char l) {
+  csval_t p_val;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p_val));
 
-static error_code_e op_patt_string(FILE *f, struct interpreter_state_t *state,
-                                   char l) {
-  const char *pattern = pats[1];
-  DBG("PATT\t%s", pattern);
-  return ERROR_NONE;
-}
+  switch (l) {
+  case 0: { /* PATT =str */
+    aint p;
+    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+    csval_t p2_val;
+    aint p2;
+    RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p2_val));
+    RETURN_IF_ERROR(csval_to_aint_checked(p2_val, &p2));
 
-static error_code_e op_patt_array(FILE *f, struct interpreter_state_t *state,
-                                  char l) {
-  const char *pattern = pats[2];
-  DBG("PATT\t%s", pattern);
-  return ERROR_NONE;
-}
+    DBG("PATT\t=str\t%d %d", UNBOX(p), UNBOX(p2));
+    aint r = Bstring_patt((void *)p, (void *)p2);
+    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+  } break;
 
-static error_code_e op_patt_sexp(FILE *f, struct interpreter_state_t *state,
-                                 char l) {
-  const char *pattern = pats[3];
-  DBG("PATT\t%s", pattern);
-  return ERROR_NONE;
-}
+  case 1: { /* PATT #string */
+    aint p;
+    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+    aint r = Bstring_tag_patt((void *)p);
+    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+  } break;
 
-static error_code_e op_patt_ref(FILE *f, struct interpreter_state_t *state,
-                                char l) {
-  const char *pattern = pats[4];
-  DBG("PATT\t%s", pattern);
-  return ERROR_NONE;
-}
+  case 2: { /* PATT #array */
+    aint p;
+    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+    DBG("PATT\t#array\t%d", UNBOX(p));
+    aint r = Barray_tag_patt((void *)p);
+    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+  } break;
 
-static error_code_e op_patt_val(FILE *f, struct interpreter_state_t *state,
-                                char l) {
-  const char *pattern = pats[5];
-  DBG("PATT\t%s", pattern);
-  return ERROR_NONE;
-}
+  case 3: { /* PATT #sexp */
+    aint p;
+    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+    DBG("PATT\t#sexp\t%d", UNBOX(p));
+    aint r = Bsexp_tag_patt((void *)p);
+    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+  } break;
 
-static error_code_e op_patt_fun(FILE *f, struct interpreter_state_t *state,
-                                char l) {
-  const char *pattern = pats[6];
-  DBG("PATT\t%s", pattern);
+  case 4: { /* PATT #ref */
+    aint r = (p_val.ty == CS_INTERNAL_REF) ? BOX(1) : BOX(0);
+    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+  } break;
+
+  case 5: { /* PATT #val */
+    aint r = (p_val.ty == CS_IMM) ? BOX(1) : BOX(0);
+    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+  } break;
+
+  case 6: { /* PATT #fun */
+    aint p;
+    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+    DBG("PATT\t#fun\t%d", UNBOX(p));
+    aint r = Bclosure_tag_patt((void *)p);
+    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+  } break;
+
+  default:
+    return op_invalid(f, state, l);
+  }
   return ERROR_NONE;
 }
 
@@ -739,13 +763,9 @@ static void init_handlers(op_handler handlers[16][16]) {
   handlers[5][9] = &op_fail;
   handlers[5][10] = &op_line;
 
-  handlers[6][0] = &op_patt_str;
-  handlers[6][1] = &op_patt_string;
-  handlers[6][2] = &op_patt_array;
-  handlers[6][3] = &op_patt_sexp;
-  handlers[6][4] = &op_patt_ref;
-  handlers[6][5] = &op_patt_val;
-  handlers[6][6] = &op_patt_fun;
+  for (int j = 0; j < 16; j++) {
+    handlers[6][j] = &op_patt;
+  }
 
   handlers[7][0] = &op_call_lread;
   handlers[7][1] = &op_call_lwrite;
