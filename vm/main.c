@@ -25,7 +25,12 @@ int main(int argc, char *argv[]) {
   }
 
   /* Interpret bytecode */
-  interpret_bc(stdout, state);
+  error_code_e error_code = ERROR_NONE;
+  interpret_bc(stdout, state, &error_code);
+  if (error_code != ERROR_NONE) {
+    fprintf(stderr, "Error: %d\n", error_code);
+    return 1;
+  }
 
   /* Cleanup interpreter state */
   destroy_interpreter_state(state);
