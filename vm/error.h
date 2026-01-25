@@ -20,6 +20,7 @@ typedef enum error_code_e {
   ERROR_JUMP_OFFSET_OUT_OF_RANGE = 15,
   ERROR_JUMP_OFFSET_NEGATIVE = 16,
   ERROR_INVALID_CAPTURE_TYPE = 17,
+  ERROR_NO_CLOSURE_IN_CURRENT_FRAME = 18,
 } error_code_e;
 
 #define RETURN_IF_ERROR(expr)                                                  \

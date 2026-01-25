@@ -419,9 +419,19 @@ static error_code_e op_ld_a(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_ld_c(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  const char *op_name = lds[0];
-  int index = state_read_int(state);
-  DBG("%s\tC(%d)", op_name, index);
+  int32_t index = state_read_int(state);
+  aint clos = callstack_closure(state_cs(state));
+  if (UNBOXED(clos) && UNBOX(clos) == 0) {
+    DBG("LD\tC(%d): no closure in current frame\n", index);
+    return ERROR_NO_CLOSURE_IN_CURRENT_FRAME;
+  }
+
+  DBG("LD\tC(%d)", index);
+  aint ref = closure_capture_ref(clos, (uint32_t)index);
+  aint *cell = NULL;
+  RETURN_IF_ERROR(csval_to_ref(state_cs(state), csval_extern(ref), &cell));
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_from_aint(*cell)));
   return ERROR_NONE;
 }
 
@@ -459,9 +469,17 @@ static error_code_e op_lda_a(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_lda_c(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  const char *op_name = lds[1];
-  int index = state_read_int(state);
-  DBG("%s\tC(%d)", op_name, index);
+  int32_t index = state_read_int(state);
+  aint clos = callstack_closure(state_cs(state));
+  if (UNBOXED(clos) && UNBOX(clos) == 0) {
+    DBG("LDA\tC(%d): no closure in current frame\n", index);
+    return ERROR_NO_CLOSURE_IN_CURRENT_FRAME;
+  }
+
+  DBG("LDA\tC(%d)", index);
+  aint ref = closure_capture_ref(clos, (uint32_t)index);
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state),
+                                         csval_extern(ref))); // direct ref
   return ERROR_NONE;
 }
 
@@ -505,9 +523,25 @@ static error_code_e op_st_a(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_st_c(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  const char *op_name = lds[2];
-  int index = state_read_int(state);
-  DBG("%s\tC(%d)", op_name, index);
+  int32_t index = state_read_int(state);
+  csval_t val;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  aint a;
+  RETURN_IF_ERROR(csval_to_aint_checked(val, &a));
+
+  aint clos = callstack_closure(state_cs(state));
+  if (UNBOXED(clos) && UNBOX(clos) == 0) {
+    DBG("ST\tC(%d): no closure in current frame\n", index);
+    return ERROR_NO_CLOSURE_IN_CURRENT_FRAME;
+  }
+
+  DBG("ST\tC(%d)", index);
+  aint ref = closure_capture_ref(clos, (uint32_t)index);
+  aint *cell = NULL;
+  RETURN_IF_ERROR(csval_to_ref(state_cs(state), csval_extern(ref), &cell));
+  *cell = a;
+
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
   return ERROR_NONE;
 }
 
