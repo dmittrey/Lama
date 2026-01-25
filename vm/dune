@@ -2,7 +2,7 @@
  (target vm)
  (mode
   (promote (until-clean)))
- (deps Makefile main.c vm.c vm.h bytecode.c bytecode.h state.c state.h ../runtime/runtime.a)
+ (deps Makefile main.c vm.c vm.h bytecode.c bytecode.h state.c state.h error.h ../runtime/runtime.a)
  (action
   (run make)))
 
@@ -10,6 +10,6 @@
  (target vm-allsan)
  (mode
   (promote (until-clean)))
- (deps Makefile main.c vm.c vm.h bytecode.c bytecode.h state.c state.h ../runtime/runtime.a)
+ (deps Makefile main.c vm.c vm.h bytecode.c bytecode.h state.c state.h error.h ../runtime/runtime.a)
  (action
   (run make vm-allsan)))
