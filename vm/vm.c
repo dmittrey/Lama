@@ -31,6 +31,7 @@ extern void *Bstring(aint *args);
 extern aint LtagHash(char *);
 extern void *Bsexp(aint *args, aint bn);
 extern void *Bsta(void *x, aint i, void *v);
+extern void *Belem(void *p, aint i);
 
 static char current_h = 0;
 
@@ -319,7 +320,18 @@ static error_code_e op_swap(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_elem(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  DBG("ELEM");
+  csval_t idx;
+  csval_t agg;
+  aint idx_val;
+  aint agg_val;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &idx));
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &agg));
+  RETURN_IF_ERROR(csval_to_imm_checked(idx, &idx_val));
+  RETURN_IF_ERROR(csval_to_aint_checked(agg, &agg_val));
+  DBG("ELEM\t%d %" PRIdAI, UNBOX(idx_val), UNBOX(agg_val));
+  void *r = Belem((void *)agg_val, idx_val);
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_from_aint((aint)r)));
   return ERROR_NONE;
 }
 
