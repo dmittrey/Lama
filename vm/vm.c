@@ -33,6 +33,7 @@ extern void *Bsexp(aint *args, aint bn);
 extern void *Bsta(void *x, aint i, void *v);
 extern void *Belem(void *p, aint i);
 extern aint Btag(void *d, aint t, aint n);
+extern aint Barray_patt(void *d, aint n);
 
 static char current_h = 0;
 
@@ -185,8 +186,8 @@ static error_code_e op_string(FILE *f, struct interpreter_state_t *state,
                               char l) {
   char *str = state_read_string(state);
   DBG("STRING (%s)\n", str);
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_extern((aint)Bstring((aint *)&str))));
+  RETURN_IF_ERROR(callstack_push_operand(
+      state_cs(state), csval_extern((aint)Bstring((aint *)&str))));
   return ERROR_NONE;
 }
 
@@ -572,7 +573,13 @@ static error_code_e op_tag(FILE *f, struct interpreter_state_t *state, char l) {
 static error_code_e op_array(FILE *f, struct interpreter_state_t *state,
                              char l) {
   int size = state_read_int(state);
-  DBG("ARRAY\t%d", size);
+  csval_t p_val;
+  aint p;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p_val));
+  RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+  DBG("ARRAY\t%d %" PRIdAI, size, UNBOX(p));
+  aint r = Barray_patt((void *)p, BOX(size));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
   return ERROR_NONE;
 }
 
