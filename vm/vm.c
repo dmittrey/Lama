@@ -27,6 +27,8 @@ extern aint Ls__Infix_6161(void *p, void *q); /* == */
 extern aint Ls__Infix_62(void *p, void *q);   /* >  */
 extern aint Ls__Infix_6261(void *p, void *q); /* >= */
 
+extern void *Bstring(aint *args);
+
 static char current_h = 0;
 
 typedef error_code_e (*op_handler)(FILE *f, struct interpreter_state_t *state,
@@ -140,6 +142,10 @@ static error_code_e op_const(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_string(FILE *f, struct interpreter_state_t *state,
                               char l) {
+  char *str = state_read_string(state);
+  DBG("STRING (%s)\n", str);
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_extern((aint)Bstring((aint *)&str))));
   return ERROR_NONE;
 }
 
