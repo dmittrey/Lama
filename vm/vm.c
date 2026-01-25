@@ -353,15 +353,27 @@ static error_code_e op_st_c(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_cjmpz(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  int target = state_read_int(state);
-  DBG("CJMPz\t0x%.8x", target);
+  csval_t val;
+  aint cond;
+  int32_t l_offset = state_read_int(state);
+  DBG("CJMPz\t0x%.8lx", l_offset);
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  RETURN_IF_ERROR(csval_to_imm(state_cs(state), val, &cond));
+  if (!UNBOX(cond))
+    RETURN_IF_ERROR(state_jmp(state, l_offset));
   return ERROR_NONE;
 }
 
 static error_code_e op_cjmpnz(FILE *f, struct interpreter_state_t *state,
                               char l) {
-  int target = state_read_int(state);
-  DBG("CJMPnz\t0x%.8x", target);
+  csval_t val;
+  aint cond;
+  int32_t l_offset = state_read_int(state);
+  DBG("CJMPnz\t0x%.8lx", l_offset);
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  RETURN_IF_ERROR(csval_to_imm(state_cs(state), val, &cond));
+  if (UNBOX(cond))
+    RETURN_IF_ERROR(state_jmp(state, l_offset));
   return ERROR_NONE;
 }
 
