@@ -287,25 +287,39 @@ static error_code_e op_lda_c(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_st_g(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  const char *op_name = lds[2];
+  csval_t val;
   int index = state_read_int(state);
-  DBG("%s\tG(%d)", op_name, index);
+  DBG("ST\tG(%d)", index);
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  aint val_aint;
+  RETURN_IF_ERROR(csval_to_aint_checked(val, &val_aint));
+  RETURN_IF_ERROR(state_set_glob(state, index, val_aint));
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), val)); /* Push back onto stack */
   return ERROR_NONE;
 }
 
 static error_code_e op_st_l(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  const char *op_name = lds[2];
+  csval_t val;
   int index = state_read_int(state);
-  DBG("%s\tL(%d)", op_name, index);
+  DBG("ST\tL(%d)", index);
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  RETURN_IF_ERROR(callstack_set_local(state_cs(state), index, val));
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), val)); /* Push back onto stack */
   return ERROR_NONE;
 }
 
 static error_code_e op_st_a(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  const char *op_name = lds[2];
+  csval_t val;
   int index = state_read_int(state);
-  DBG("%s\tA(%d)", op_name, index);
+  DBG("ST\tA(%d)", index);
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  RETURN_IF_ERROR(callstack_set_arg(state_cs(state), index, val));
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), val)); /* Push back onto stack */
   return ERROR_NONE;
 }
 
