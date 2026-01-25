@@ -13,19 +13,6 @@
 #define DBG(...) ((void)0)
 #endif
 
-static inline int read_int(interpreter_state_t *state) {
-  state->ip += sizeof(int);
-  return *(int *)(state->ip - sizeof(int));
-}
-
-static inline unsigned char read_byte(interpreter_state_t *state) {
-  return (unsigned char)*state->ip++;
-}
-
-static inline char *read_string(interpreter_state_t *state) {
-  return get_string(state->bf, read_int(state));
-}
-
 static char current_h = 0;
 
 typedef error_code_e (*op_handler)(FILE *f, struct interpreter_state_t *state,
@@ -141,7 +128,7 @@ static error_code_e op_binop_or(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_const(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  int value = read_int(state);
+  int value = state_read_int(state);
   DBG("CONST\t%d", value);
   return ERROR_NONE;
 }
@@ -153,8 +140,8 @@ static error_code_e op_string(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_sexp(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  char *value = read_string(state);
-  int size = read_int(state);
+  char *value = state_read_string(state);
+  int size = state_read_int(state);
   DBG("SEXP\t%s ", value);
   DBG("%d", size);
   return ERROR_NONE;
@@ -171,7 +158,7 @@ static error_code_e op_sta(FILE *f, struct interpreter_state_t *state, char l) {
 }
 
 static error_code_e op_jmp(FILE *f, struct interpreter_state_t *state, char l) {
-  int offset = read_int(state);
+  int offset = state_read_int(state);
   DBG("JMP\t0x%.8x", offset);
   return ERROR_NONE;
 }
@@ -212,7 +199,7 @@ static error_code_e op_elem(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_ld_g(FILE *f, struct interpreter_state_t *state,
                             char l) {
   const char *op_name = lds[0];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tG(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -220,7 +207,7 @@ static error_code_e op_ld_g(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_ld_l(FILE *f, struct interpreter_state_t *state,
                             char l) {
   const char *op_name = lds[0];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tL(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -228,7 +215,7 @@ static error_code_e op_ld_l(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_ld_a(FILE *f, struct interpreter_state_t *state,
                             char l) {
   const char *op_name = lds[0];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tA(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -236,7 +223,7 @@ static error_code_e op_ld_a(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_ld_c(FILE *f, struct interpreter_state_t *state,
                             char l) {
   const char *op_name = lds[0];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tC(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -244,7 +231,7 @@ static error_code_e op_ld_c(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_lda_g(FILE *f, struct interpreter_state_t *state,
                              char l) {
   const char *op_name = lds[1];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tG(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -252,7 +239,7 @@ static error_code_e op_lda_g(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_lda_l(FILE *f, struct interpreter_state_t *state,
                              char l) {
   const char *op_name = lds[1];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tL(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -260,7 +247,7 @@ static error_code_e op_lda_l(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_lda_a(FILE *f, struct interpreter_state_t *state,
                              char l) {
   const char *op_name = lds[1];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tA(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -268,7 +255,7 @@ static error_code_e op_lda_a(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_lda_c(FILE *f, struct interpreter_state_t *state,
                              char l) {
   const char *op_name = lds[1];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tC(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -276,7 +263,7 @@ static error_code_e op_lda_c(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_st_g(FILE *f, struct interpreter_state_t *state,
                             char l) {
   const char *op_name = lds[2];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tG(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -284,7 +271,7 @@ static error_code_e op_st_g(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_st_l(FILE *f, struct interpreter_state_t *state,
                             char l) {
   const char *op_name = lds[2];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tL(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -292,7 +279,7 @@ static error_code_e op_st_l(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_st_a(FILE *f, struct interpreter_state_t *state,
                             char l) {
   const char *op_name = lds[2];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tA(%d)", op_name, index);
   return ERROR_NONE;
 }
@@ -300,29 +287,29 @@ static error_code_e op_st_a(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_st_c(FILE *f, struct interpreter_state_t *state,
                             char l) {
   const char *op_name = lds[2];
-  int index = read_int(state);
+  int index = state_read_int(state);
   DBG("%s\tC(%d)", op_name, index);
   return ERROR_NONE;
 }
 
 static error_code_e op_cjmpz(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  int target = read_int(state);
+  int target = state_read_int(state);
   DBG("CJMPz\t0x%.8x", target);
   return ERROR_NONE;
 }
 
 static error_code_e op_cjmpnz(FILE *f, struct interpreter_state_t *state,
                               char l) {
-  int target = read_int(state);
+  int target = state_read_int(state);
   DBG("CJMPnz\t0x%.8x", target);
   return ERROR_NONE;
 }
 
 static error_code_e op_begin(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  int value = read_int(state);
-  int offset = read_int(state);
+  int value = state_read_int(state);
+  int offset = state_read_int(state);
   DBG("BEGIN\t%d ", value);
   DBG("%d", offset);
   return ERROR_NONE;
@@ -330,8 +317,8 @@ static error_code_e op_begin(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_cbegin(FILE *f, struct interpreter_state_t *state,
                               char l) {
-  int value = read_int(state);
-  int offset = read_int(state);
+  int value = state_read_int(state);
+  int offset = state_read_int(state);
   DBG("CBEGIN\t%d ", value);
   DBG("%d", offset);
   return ERROR_NONE;
@@ -339,26 +326,26 @@ static error_code_e op_cbegin(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
                                char l) {
-  int offset = read_int(state);
+  int offset = state_read_int(state);
   DBG("CLOSURE\t0x%.8x", offset);
-  int n = read_int(state);
+  int n = state_read_int(state);
   for (int i = 0; i < n; i++) {
-    unsigned char kind = read_byte(state);
+    unsigned char kind = state_read_byte(state);
     switch (kind) {
     case 0: {
-      int index = read_int(state);
+      int index = state_read_int(state);
       DBG("G(%d)", index);
     } break;
     case 1: {
-      int index = read_int(state);
+      int index = state_read_int(state);
       DBG("L(%d)", index);
     } break;
     case 2: {
-      int index = read_int(state);
+      int index = state_read_int(state);
       DBG("A(%d)", index);
     } break;
     case 3: {
-      int index = read_int(state);
+      int index = state_read_int(state);
       DBG("C(%d)", index);
     } break;
     default:
@@ -370,23 +357,23 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_callc(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  int arity = read_int(state);
+  int arity = state_read_int(state);
   DBG("CALLC\t%d", arity);
   return ERROR_NONE;
 }
 
 static error_code_e op_call(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  int offset = read_int(state);
-  int arity = read_int(state);
+  int offset = state_read_int(state);
+  int arity = state_read_int(state);
   DBG("CALL\t0x%.8x ", offset);
   DBG("%d", arity);
   return ERROR_NONE;
 }
 
 static error_code_e op_tag(FILE *f, struct interpreter_state_t *state, char l) {
-  char *tag = read_string(state);
-  int arity = read_int(state);
+  char *tag = state_read_string(state);
+  int arity = state_read_int(state);
   DBG("TAG\t%s ", tag);
   DBG("%d", arity);
   return ERROR_NONE;
@@ -394,15 +381,15 @@ static error_code_e op_tag(FILE *f, struct interpreter_state_t *state, char l) {
 
 static error_code_e op_array(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  int size = read_int(state);
+  int size = state_read_int(state);
   DBG("ARRAY\t%d", size);
   return ERROR_NONE;
 }
 
 static error_code_e op_fail(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  int code = read_int(state);
-  int value = read_int(state);
+  int code = state_read_int(state);
+  int value = state_read_int(state);
   DBG("FAIL\t%d", code);
   DBG("%d", value);
   return ERROR_NONE;
@@ -410,7 +397,7 @@ static error_code_e op_fail(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_line(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  int line = read_int(state);
+  int line = state_read_int(state);
   DBG("LINE\t%d", line);
   return ERROR_NONE;
 }
@@ -490,7 +477,7 @@ static error_code_e op_call_lstring(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_call_barray(FILE *f, struct interpreter_state_t *state,
                                    char l) {
-  int size = read_int(state);
+  int size = state_read_int(state);
   DBG("CALL\tBarray\t%d", size);
   return ERROR_NONE;
 }
@@ -573,18 +560,18 @@ static void init_handlers(op_handler handlers[16][16]) {
   handlers[7][4] = &op_call_barray;
 }
 
-void interpret_bc(FILE *f, interpreter_state_t *state,
+void interpret_bc(FILE *f, struct interpreter_state_t *state,
                   error_code_e *error_code) {
-  char *base_ip = state->ip;
+  char *base_ip = state_ip(state);
   static op_handler handlers[16][16];
   init_handlers(handlers);
 
   for (;;) {
-    char x = (char)read_byte(state);
+    char x = (char)state_read_byte(state);
     char h = (x & 0xF0) >> 4;
     char l = x & 0x0F;
 
-    DBG("0x%.8lx:\t", state->ip - base_ip - 1);
+    DBG("0x%.8lx:\t", state_ip(state) - base_ip - 1);
     current_h = h;
     if ((*error_code = handlers[h][l](f, state, l)) != ERROR_NONE) {
       break;

@@ -3,6 +3,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+/* Structure internals */
+typedef struct interpreter_state_t {
+  /* Virtual registers */
+  char *ip; /* address of current instruction */
+
+  /* Memory areas */
+  aint *globals;      /* global variables array */
+  size_t num_globals; /* number of global variables */
+
+  /* Bytecode file */
+  bytefile *bf; /* loaded bytecode file */
+} interpreter_state_t;
+
 /* Lifecycle */
 interpreter_state_t *create_interpreter_state(bytefile *bf) {
   interpreter_state_t *state = malloc(sizeof(interpreter_state_t));
@@ -40,4 +53,43 @@ void destroy_interpreter_state(interpreter_state_t *state) {
 
     free(state);
   }
+}
+
+/* Operations */
+char *state_ip(interpreter_state_t *state) { return state->ip; }
+char *state_base_ip(struct interpreter_state_t *state) {
+  return state->bf->code_ptr;
+}
+uint32_t state_ip_off(interpreter_state_t *state) {
+  return state->ip - state->bf->code_ptr;
+}
+int state_read_int(interpreter_state_t *state) {
+  state->ip += sizeof(int);
+  return *(int *)(state->ip - sizeof(int));
+}
+char state_read_byte(interpreter_state_t *state) {
+  return (unsigned char)*state->ip++;
+}
+char *state_read_string(interpreter_state_t *state) {
+  return get_string(state->bf, state_read_int(state));
+}
+
+/* Globals */
+error_code_e state_get_glob(interpreter_state_t *state, uint32_t index,
+                            aint *ret_val) {
+  if (index < 0)
+    return ERROR_GLOB_IDX_NEGATIVE;
+  if (index >= state->num_globals)
+    return ERROR_GLOB_IDX_OUT_OF_RANGE;
+  *ret_val = state->globals[index];
+  return ERROR_NONE;
+}
+error_code_e state_set_glob(interpreter_state_t *state, uint32_t index,
+                            aint value) {
+  if (index < 0)
+    return ERROR_GLOB_IDX_NEGATIVE;
+  if (index >= state->num_globals)
+    return ERROR_GLOB_IDX_OUT_OF_RANGE;
+  state->globals[index] = value;
+  return ERROR_NONE;
 }

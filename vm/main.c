@@ -18,7 +18,7 @@ int main(int argc, char *argv[]) {
   }
 
   /* Create interpreter state with 64KB stack */
-  interpreter_state_t *state = create_interpreter_state(bf);
+  struct interpreter_state_t *state = create_interpreter_state(bf);
   if (!state) {
     fprintf(stderr, "Failed to create interpreter state\n");
     return 1;
