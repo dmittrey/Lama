@@ -216,25 +216,32 @@ static error_code_e op_elem(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_ld_g(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  const char *op_name = lds[0];
+  aint val;
   int index = state_read_int(state);
-  DBG("%s\tG(%d)", op_name, index);
+  DBG("LD\tG(%d)", index);
+  RETURN_IF_ERROR(state_get_glob(state, index, &val));
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_from_aint(val)));
   return ERROR_NONE;
 }
 
 static error_code_e op_ld_l(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  const char *op_name = lds[0];
+  csval_t val;
   int index = state_read_int(state);
-  DBG("%s\tL(%d)", op_name, index);
+  DBG("LD\tL(%d)", index);
+  RETURN_IF_ERROR(callstack_get_local(state_cs(state), index, &val));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
   return ERROR_NONE;
 }
 
 static error_code_e op_ld_a(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  const char *op_name = lds[0];
+  csval_t val;
   int index = state_read_int(state);
-  DBG("%s\tA(%d)", op_name, index);
+  DBG("LD\tA(%d)", index);
+  RETURN_IF_ERROR(callstack_get_arg(state_cs(state), index, &val));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
   return ERROR_NONE;
 }
 
