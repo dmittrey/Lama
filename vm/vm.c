@@ -424,9 +424,11 @@ static error_code_e op_callc(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_call(FILE *f, struct interpreter_state_t *state,
                             char l) {
   int offset = state_read_int(state);
-  int arity = state_read_int(state);
-  DBG("CALL\t0x%.8x ", offset);
-  DBG("%d", arity);
+  int nargs = state_read_int(state);
+  DBG("CALL\t0x%.8x %d", offset, nargs);
+  RETURN_IF_ERROR(
+      callstack_push_frame(state_cs(state), state_ip_off(state), nargs));
+  RETURN_IF_ERROR(state_jmp(state, offset));
   return ERROR_NONE;
 }
 
