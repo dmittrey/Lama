@@ -2,6 +2,9 @@
 #define STATE_H
 
 #include <stddef.h>
+#include <stdint.h>
+
+#include "../runtime/runtime.h"
 
 #include "bytecode.h"
 
@@ -9,6 +12,10 @@
 typedef struct interpreter_state_t {
   /* Virtual registers */
   char *ip; /* address of current instruction */
+
+  /* Memory areas */
+  aint *globals;      /* global variables array */
+  size_t num_globals; /* number of global variables */
 
   /* Bytecode file */
   bytefile *bf; /* loaded bytecode file */
