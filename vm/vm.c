@@ -582,10 +582,17 @@ static error_code_e op_begin(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_cbegin(FILE *f, struct interpreter_state_t *state,
                               char l) {
-  int value = state_read_int(state);
-  int offset = state_read_int(state);
-  DBG("CBEGIN\t%d ", value);
-  DBG("%d", offset);
+  int nargs = state_read_int(state);
+  int nlocals = state_read_int(state);
+  if (callstack_nframes(state_cs(state)) == 0)
+    RETURN_IF_ERROR(callstack_push_frame(state_cs(state), 0, (uint32_t)nargs));
+  if ((uint32_t)nargs != callstack_nargs(state_cs(state))) {
+    DBG("CBEGIN\t%d\t%d: nargs mismatch\n", nargs, nlocals);
+    return ERROR_NARGS_MISMATCH;
+  }
+
+  DBG("CBEGIN\t%d\t%d", nargs, nlocals);
+  RETURN_IF_ERROR(callstack_alloc_locals(state_cs(state), (uint32_t)nlocals));
   return ERROR_NONE;
 }
 
@@ -664,8 +671,32 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_callc(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  int arity = state_read_int(state);
-  DBG("CALLC\t%d", arity);
+  uint32_t n = (uint32_t)state_read_int(state);
+  uint32_t ret_off = state_ip_off(state);
+
+  // stack: ... [closure][arg0]...[arg(n-1)] (top = arg(n-1))
+  csval_t *tmp = alloca(sizeof(csval_t) * (size_t)n);
+
+  for (int i = (int)n - 1; i >= 0; --i) {
+    RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &tmp[i]));
+  }
+
+  csval_t clos_val;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &clos_val));
+  aint clos;
+  RETURN_IF_ERROR(csval_to_aint_checked(clos_val, &clos));
+
+  for (uint32_t i = 0; i < n; ++i) {
+    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), tmp[i]));
+  }
+
+  void *entry = closure_entry_ptr(clos);
+
+  DBG("CALLC\t%d", n);
+  RETURN_IF_ERROR(
+      callstack_push_cframe(state_cs(state), clos, ret_off, (uint32_t)n));
+  RETURN_IF_ERROR(
+      state_jmp(state, (int32_t)((char *)entry - state_base_ip(state))));
   return ERROR_NONE;
 }
 
