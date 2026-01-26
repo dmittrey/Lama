@@ -386,25 +386,33 @@ static error_code_e op_ld_c(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_lda_g(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  const char *op_name = lds[1];
-  int index = state_read_int(state);
-  DBG("%s\tG(%d)", op_name, index);
+  aint *ref;
+  int32_t index = state_read_int(state);
+  DBG("LDA\tG(%d)", index);
+  RETURN_IF_ERROR(state_get_glob_addr(state, index, &ref));
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_extern((aint)ref)));
   return ERROR_NONE;
 }
 
 static error_code_e op_lda_l(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  const char *op_name = lds[1];
-  int index = state_read_int(state);
-  DBG("%s\tL(%d)", op_name, index);
+  int32_t index = state_read_int(state);
+
+  DBG("LDA\tL(%d)", index);
+  csval_t ref;
+  RETURN_IF_ERROR(callstack_get_local_addr(state_cs(state), index, &ref));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), ref));
   return ERROR_NONE;
 }
 
 static error_code_e op_lda_a(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  const char *op_name = lds[1];
-  int index = state_read_int(state);
-  DBG("%s\tA(%d)", op_name, index);
+  int32_t index = state_read_int(state);
+  DBG("LDA\tA(%d)", index);
+  csval_t ref;
+  RETURN_IF_ERROR(callstack_get_arg_addr(state_cs(state), index, &ref));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), ref));
   return ERROR_NONE;
 }
 

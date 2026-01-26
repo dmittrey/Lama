@@ -114,6 +114,15 @@ error_code_e state_get_glob(interpreter_state_t *state, uint32_t index,
   *ret_val = state->globals[index];
   return ERROR_NONE;
 }
+error_code_e state_get_glob_addr(struct interpreter_state_t *state,
+                                 uint32_t index, aint **ret_addr) {
+  if (index < 0)
+    return ERROR_GLOB_IDX_NEGATIVE;
+  if (index >= state->num_globals)
+    return ERROR_GLOB_IDX_OUT_OF_RANGE;
+  *ret_addr = &state->globals[index];
+  return ERROR_NONE;
+}
 error_code_e state_set_glob(interpreter_state_t *state, uint32_t index,
                             aint value) {
   if (index < 0)
