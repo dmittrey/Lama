@@ -170,7 +170,17 @@ static error_code_e op_jmp(FILE *f, struct interpreter_state_t *state, char l) {
 }
 
 static error_code_e op_end(FILE *f, struct interpreter_state_t *state, char l) {
-  DBG("END");
+  csval_t callee_ret;
+  uint32_t ret_off;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &callee_ret));
+  RETURN_IF_ERROR(callstack_pop_frame(state_cs(state), &ret_off));
+  if (callstack_nframes(state_cs(state)) == 0) {
+    return ERROR_STOP;
+  }
+  DBG("END\t%p", ret_off);
+  RETURN_IF_ERROR(callstack_push_operand(
+      state_cs(state), callee_ret)); // Put retval on caller stack
+  RETURN_IF_ERROR(state_jmp(state, ret_off));
   return ERROR_NONE;
 }
 
