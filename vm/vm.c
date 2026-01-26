@@ -28,6 +28,8 @@ extern aint Ls__Infix_62(void *p, void *q);   /* >  */
 extern aint Ls__Infix_6261(void *p, void *q); /* >= */
 
 extern void *Bstring(aint *args);
+extern aint LtagHash(char *);
+extern void *Bsexp(aint *args, aint bn);
 
 static char current_h = 0;
 
@@ -50,6 +52,12 @@ static inline error_code_e csval_to_aint_checked(csval_t v, aint *out) {
   }
   *out = v.val;
   return ERROR_NONE;
+}
+
+static inline csval_t csval_from_slot_words(const aint *slot_words) {
+  aint type_word = slot_words[0];
+  assert(UNBOXED(type_word));
+  return (csval_t){.ty = (csval_type_e)UNBOX(type_word), .val = slot_words[1]};
 }
 
 static error_code_e op_invalid(FILE *f, struct interpreter_state_t *state,
@@ -151,10 +159,25 @@ static error_code_e op_string(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_sexp(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  char *value = state_read_string(state);
-  int size = state_read_int(state);
-  DBG("SEXP\t%s ", value);
-  DBG("%d", size);
+  csval_t args_ref;
+  char *tag = state_read_string(state);
+  int32_t arity = state_read_int(state);
+  DBG("SEXP\t%s %d", tag, arity);
+  aint th = LtagHash(tag);
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(th)));
+  RETURN_IF_ERROR(
+      callstack_pop_n_operands(state_cs(state), arity + 1, &args_ref));
+  aint *slot_words = NULL;
+  RETURN_IF_ERROR(csval_to_ref(state_cs(state), args_ref, &slot_words));
+  uint32_t nargs = (uint32_t)(arity + 1);
+  aint args[nargs];
+  for (uint32_t i = 0; i < nargs; i++) {
+    csval_t v = csval_from_slot_words(slot_words + (i * CSVAL_WORDS));
+    RETURN_IF_ERROR(csval_to_aint_checked(v, &args[i]));
+  }
+  void *r = Bsexp(args, BOX(nargs /* With tag*/));
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_extern((aint)r)));
   return ERROR_NONE;
 }
 
