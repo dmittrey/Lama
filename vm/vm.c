@@ -30,6 +30,7 @@ extern aint Ls__Infix_6261(void *p, void *q); /* >= */
 extern void *Bstring(aint *args);
 extern aint LtagHash(char *);
 extern void *Bsexp(aint *args, aint bn);
+extern void *Bsta(void *x, aint i, void *v);
 
 static char current_h = 0;
 
@@ -54,10 +55,40 @@ static inline error_code_e csval_to_aint_checked(csval_t v, aint *out) {
   return ERROR_NONE;
 }
 
+static inline error_code_e csval_to_imm_checked(csval_t v, aint *out) {
+  if (v.ty != CS_IMM || !UNBOXED(v.val)) {
+    return ERROR_NOT_UNBOXED;
+  }
+  *out = v.val;
+  return ERROR_NONE;
+}
+
 static inline csval_t csval_from_slot_words(const aint *slot_words) {
   aint type_word = slot_words[0];
   assert(UNBOXED(type_word));
   return (csval_t){.ty = (csval_type_e)UNBOX(type_word), .val = slot_words[1]};
+}
+
+static inline error_code_e store_internal_ref(struct callstack_t *stack,
+                                              csval_t ref, csval_t value) {
+  aint *slot_words = NULL;
+  RETURN_IF_ERROR(csval_to_ref(stack, ref, &slot_words));
+  slot_words[0] = BOX((aint)value.ty);
+  slot_words[1] = value.val;
+  return ERROR_NONE;
+}
+
+static inline error_code_e store_ref(struct callstack_t *stack, csval_t ref,
+                                     csval_t value) {
+  if (ref.ty == CS_INTERNAL_REF) {
+    return store_internal_ref(stack, ref, value);
+  }
+  aint *refp = NULL;
+  RETURN_IF_ERROR(csval_to_ref(stack, ref, &refp));
+  aint v;
+  RETURN_IF_ERROR(csval_to_aint_checked(value, &v));
+  Bsta(refp, (aint)refp, (void *)v);
+  return ERROR_NONE;
 }
 
 static error_code_e op_invalid(FILE *f, struct interpreter_state_t *state,
@@ -182,12 +213,41 @@ static error_code_e op_sexp(FILE *f, struct interpreter_state_t *state,
 }
 
 static error_code_e op_sti(FILE *f, struct interpreter_state_t *state, char l) {
+  csval_t val;
+  csval_t ref;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &ref));
   DBG("STI");
+  RETURN_IF_ERROR(store_ref(state_cs(state), ref, val));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
   return ERROR_NONE;
 }
 
 static error_code_e op_sta(FILE *f, struct interpreter_state_t *state, char l) {
-  DBG("STA");
+  csval_t val;
+  csval_t sec_op;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &sec_op));
+
+  // case AGGREGATE: agg idx val
+  if (sec_op.ty == CS_IMM) {
+    csval_t agg;
+    aint agg_val;
+    aint idx_val;
+    aint val_aint;
+    RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &agg));
+    RETURN_IF_ERROR(csval_to_aint_checked(agg, &agg_val));
+    RETURN_IF_ERROR(csval_to_imm_checked(sec_op, &idx_val));
+    RETURN_IF_ERROR(csval_to_aint_checked(val, &val_aint));
+    DBG("STA\t%d %" PRIdAI, UNBOX(idx_val), UNBOX(val_aint));
+    Bsta((void *)agg_val, idx_val, (void *)val_aint);
+  }
+  // case REF: ref val
+  else {
+    DBG("STA");
+    RETURN_IF_ERROR(store_ref(state_cs(state), sec_op, val));
+  }
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
   return ERROR_NONE;
 }
 
