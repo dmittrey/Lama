@@ -3,6 +3,18 @@
 
 #include "bytecode.h"
 
+#define PUB_VAL_SIZE 2 * sizeof(uint32_t) // pos + offset
+/*
+| stringtab_size | global_area_size | public_symbols_number |
+|                   publics table                           |
+|                   string table                            |
+|                   bytecode                                |
+*/
+static inline int header_size(const bytefile *const f) {
+  return sizeof(f->stringtab_size) + sizeof(f->global_area_size) +
+         sizeof(f->public_symbols_number);
+}
+
 /* Gets a string from a string table by an index */
 char *get_string(const bytefile *const f, int pos) {
   if (pos < 0 || pos >= f->stringtab_size) {
@@ -74,7 +86,7 @@ bytefile *parse_bc_file(const char *const fname) {
   }
   fclose(f);
 
-  if (size < 3u * sizeof(int)) {
+  if (size < header_size(file)) {
     fprintf(stderr, "Invalid bytecode: too small\n");
     free(file);
     return NULL;
@@ -87,8 +99,8 @@ bytefile *parse_bc_file(const char *const fname) {
   }
 
   size_t payload_bytes =
-      size - 3u * sizeof(int); /* bytes placed into buffer[] */
-  size_t public_bytes = (size_t)file->public_symbols_number * 2u * sizeof(int);
+      size - header_size(file); /* bytes placed into buffer[] */
+  size_t public_bytes = (size_t)file->public_symbols_number * PUB_VAL_SIZE;
   size_t string_bytes = (size_t)file->stringtab_size;
 
   if (public_bytes > payload_bytes ||
