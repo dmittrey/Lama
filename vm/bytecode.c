@@ -4,18 +4,38 @@
 #include "bytecode.h"
 
 /* Gets a string from a string table by an index */
-char *get_string(bytefile *f, int pos) { return &f->string_ptr[pos]; }
+char *get_string(const bytefile *const f, int pos) {
+  if (pos < 0 || pos >= f->stringtab_size) {
+    fprintf(stderr,
+            "bytecode: invalid string table index: %d (table_size=%d)\n", pos,
+            f->stringtab_size);
+    return NULL;
+  }
+  return &f->string_ptr[pos];
+}
 
 /* Gets a name for a public symbol */
-char *get_public_name(bytefile *f, int i) {
+char *get_public_name(const bytefile *const f, int i) {
+  if (i < 0 || i >= f->public_symbols_number) {
+    fprintf(stderr, "bytecode: invalid public symbol index: %d (number=%d)\n",
+            i, f->public_symbols_number);
+    return NULL;
+  }
   return get_string(f, f->public_ptr[i * 2]);
 }
 
 /* Gets an offset for a public symbol */
-int get_public_offset(bytefile *f, int i) { return f->public_ptr[i * 2 + 1]; }
+int get_public_offset(const bytefile *const f, int i) {
+  if (i < 0 || i >= f->public_symbols_number) {
+    fprintf(stderr, "bytecode: invalid public symbol index: %d (number=%d)\n",
+            i, f->public_symbols_number);
+    return 0;
+  }
+  return f->public_ptr[i * 2 + 1];
+}
 
 /* Reads a binary bytecode file by name and unpacks it */
-bytefile *parse_bc_file(char *fname) {
+bytefile *parse_bc_file(const char *const fname) {
   FILE *f = fopen(fname, "rb");
   if (!f) {
     fprintf(stderr, "Cannot open file: %s\n", fname);

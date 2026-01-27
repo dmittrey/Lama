@@ -94,11 +94,19 @@ char state_read_byte(interpreter_state_t *state) {
 char *state_read_string(interpreter_state_t *state) {
   return get_string(state->bf, state_read_int(state));
 }
-error_code_e state_jmp(struct interpreter_state_t *state, int32_t offset) {
-  if (offset < 0)
+error_code_e state_jmp(interpreter_state_t *state, int32_t offset) {
+  if (offset < 0) {
+    fprintf(stderr, "vm: jump offset negative: %d at ip=0x%.8lx\n", offset,
+            state->ip - state->bf->code_ptr - 1);
     return ERROR_JUMP_OFFSET_NEGATIVE;
-  if (offset >= state->bf->code_size)
+  }
+
+  if (offset >= state->bf->code_size) {
+    fprintf(stderr,
+            "vm: jump offset out of range: %d(code size=%lu) at ip=0x%.8lx\n",
+            offset, state->bf->code_size, state->ip - state->bf->code_ptr - 1);
     return ERROR_JUMP_OFFSET_OUT_OF_RANGE;
+  }
 
   state->ip = state->bf->code_ptr + offset;
   return ERROR_NONE;
@@ -107,28 +115,37 @@ error_code_e state_jmp(struct interpreter_state_t *state, int32_t offset) {
 /* Globals */
 error_code_e state_get_glob(interpreter_state_t *state, uint32_t index,
                             aint *ret_val) {
-  if (index < 0)
-    return ERROR_GLOB_IDX_NEGATIVE;
-  if (index >= state->num_globals)
+  if (index >= state->num_globals) {
+    fprintf(
+        stderr,
+        "vm: global index out of range: %d(num globals=%lu) at ip=0x%.8lx\n",
+        index, state->num_globals, state->ip - state->bf->code_ptr - 1);
     return ERROR_GLOB_IDX_OUT_OF_RANGE;
+  }
   *ret_val = state->globals[index];
   return ERROR_NONE;
 }
 error_code_e state_get_glob_addr(struct interpreter_state_t *state,
                                  uint32_t index, aint **ret_addr) {
-  if (index < 0)
-    return ERROR_GLOB_IDX_NEGATIVE;
-  if (index >= state->num_globals)
+  if (index >= state->num_globals) {
+    fprintf(
+        stderr,
+        "vm: global index out of range: %d(num globals=%lu) at ip=0x%.8lx\n",
+        index, state->num_globals, state->ip - state->bf->code_ptr - 1);
     return ERROR_GLOB_IDX_OUT_OF_RANGE;
+  }
   *ret_addr = &state->globals[index];
   return ERROR_NONE;
 }
 error_code_e state_set_glob(interpreter_state_t *state, uint32_t index,
                             aint value) {
-  if (index < 0)
-    return ERROR_GLOB_IDX_NEGATIVE;
-  if (index >= state->num_globals)
+  if (index >= state->num_globals) {
+    fprintf(
+        stderr,
+        "vm: global index out of range: %d(num globals=%lu) at ip=0x%.8lx\n",
+        index, state->num_globals, state->ip - state->bf->code_ptr - 1);
     return ERROR_GLOB_IDX_OUT_OF_RANGE;
+  }
   state->globals[index] = value;
   return ERROR_NONE;
 }
