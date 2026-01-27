@@ -45,6 +45,11 @@ extern aint Barray_tag_patt(void *x);
 extern aint Bsexp_tag_patt(void *x);
 extern aint Bclosure_tag_patt(void *x);
 
+extern aint Lread();
+extern aint Lwrite(aint n);
+extern aint Llength(void *p);
+extern void *Lstring(aint *args);
+
 // Prevent dangling closure elem
 static inline aint *alloc_capture_cell(aint v) {
   aint args[1] = {v};
@@ -838,24 +843,50 @@ static error_code_e op_patt(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_call_lread(FILE *f, struct interpreter_state_t *state,
                                   char l) {
   DBG("CALL\tLread");
+  fprintf(stdout, " ");
+  aint r = Lread();
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
   return ERROR_NONE;
 }
 
 static error_code_e op_call_lwrite(FILE *f, struct interpreter_state_t *state,
                                    char l) {
   DBG("CALL\tLwrite");
+  csval_t v;
+  aint n;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &v));
+  RETURN_IF_ERROR(csval_to_aint_checked(v, &n));
+  aint r = Lwrite(n);
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
   return ERROR_NONE;
 }
 
 static error_code_e op_call_llength(FILE *f, struct interpreter_state_t *state,
                                     char l) {
   DBG("CALL\tLlength");
+  csval_t v;
+  aint p;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &v));
+  RETURN_IF_ERROR(csval_to_aint_checked(v, &p));
+  if (UNBOXED(p)) {
+    return ERROR_NOT_BOXED;
+  }
+  aint r = Llength((void *)p);
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
   return ERROR_NONE;
 }
 
 static error_code_e op_call_lstring(FILE *f, struct interpreter_state_t *state,
                                     char l) {
   DBG("CALL\tLstring");
+  csval_t v;
+  aint p;
+  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &v));
+  RETURN_IF_ERROR(csval_to_aint_checked(v, &p));
+  aint args[1] = {p};
+  void *r = Lstring(args);
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_extern((aint)r)));
   return ERROR_NONE;
 }
 
@@ -863,6 +894,28 @@ static error_code_e op_call_barray(FILE *f, struct interpreter_state_t *state,
                                    char l) {
   int size = state_read_int(state);
   DBG("CALL\tBarray\t%d", size);
+  if (size < 0) {
+    return ERROR_STACK_UNDERFLOW;
+  }
+  if (size == 0) {
+    void *r = Barray(NULL, BOX(0));
+    RETURN_IF_ERROR(
+        callstack_push_operand(state_cs(state), csval_extern((aint)r)));
+    return ERROR_NONE;
+  }
+  csval_t args_ref;
+  RETURN_IF_ERROR(
+      callstack_pop_n_operands(state_cs(state), (uint32_t)size, &args_ref));
+  aint *slot_words = NULL;
+  RETURN_IF_ERROR(csval_to_ref(state_cs(state), args_ref, &slot_words));
+  aint args[(size_t)size];
+  for (uint32_t i = 0; i < (uint32_t)size; i++) {
+    csval_t v = csval_from_slot_words(slot_words + (i * CSVAL_WORDS));
+    RETURN_IF_ERROR(csval_to_aint_checked(v, &args[i]));
+  }
+  void *r = Barray(args, BOX(size));
+  RETURN_IF_ERROR(
+      callstack_push_operand(state_cs(state), csval_extern((aint)r)));
   return ERROR_NONE;
 }
 
