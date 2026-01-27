@@ -27,12 +27,4 @@ char state_read_byte(struct interpreter_state_t *state);
 char *state_read_string(struct interpreter_state_t *state);
 error_code_e state_jmp(struct interpreter_state_t *state, int32_t offset);
 
-/* Globals */
-error_code_e state_get_glob(struct interpreter_state_t *state, uint32_t index,
-                            aint *ret_val);
-error_code_e state_get_glob_addr(struct interpreter_state_t *state,
-                                 uint32_t index, aint **ret_addr);
-error_code_e state_set_glob(struct interpreter_state_t *state, uint32_t index,
-                            aint value);
-
 #endif

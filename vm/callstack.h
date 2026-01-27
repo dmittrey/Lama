@@ -47,7 +47,7 @@ size_t callstack_nframes(struct callstack_t *s);
 aint callstack_closure(struct callstack_t *s);
 
 /* Lifecycle */
-struct callstack_t *create_callstack();
+struct callstack_t *create_callstack(int nglobals);
 void destroy_callstack(struct callstack_t *);
 
 /* Frame operations */
@@ -68,15 +68,23 @@ error_code_e callstack_get_arg(struct callstack_t *stack, uint32_t index,
                                csval_t *ret);
 error_code_e callstack_set_arg(struct callstack_t *stack, uint32_t index,
                                csval_t value);
-error_code_e callstack_get_local_addr(struct callstack_t *stack, uint32_t index,
-                                      csval_t *ret);
-error_code_e callstack_get_arg_addr(struct callstack_t *stack, uint32_t index,
-                                    csval_t *ret);
+error_code_e callstack_get_glob(struct callstack_t *stack, uint32_t index,
+                                csval_t *ret);
+error_code_e callstack_set_glob(struct callstack_t *stack, uint32_t index,
+                                csval_t value);
 
 /* Operands stack */
 error_code_e callstack_pop_operand(struct callstack_t *stack, csval_t *ret);
 error_code_e callstack_push_operand(struct callstack_t *stack, csval_t value);
 error_code_e callstack_pop_n_operands(struct callstack_t *stack, uint32_t n,
                                       csval_t *ret);
+
+/* Reference */
+error_code_e callstack_get_local_addr(struct callstack_t *stack, uint32_t index,
+                                      csval_t *ret);
+error_code_e callstack_get_arg_addr(struct callstack_t *stack, uint32_t index,
+                                    csval_t *ret);
+error_code_e callstack_get_glob_addr(struct callstack_t *stack, uint32_t index,
+                                     csval_t *ret);
 
 #endif

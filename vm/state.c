@@ -11,10 +11,6 @@ typedef struct interpreter_state_t {
   /* Virtual registers */
   char *ip; /* address of current instruction */
 
-  /* Memory areas */
-  aint *globals;      /* global variables array */
-  size_t num_globals; /* number of global variables */
-
   /* Call stack opaque */
   struct callstack_t *callstack;
 
@@ -33,21 +29,8 @@ interpreter_state_t *create_interpreter_state(bytefile *bf) {
   /* Virtual registers */
   state->ip = bf->code_ptr; /* start at beginning of code */
 
-  /* Memory areas */
-  state->num_globals = bf->global_area_size;
-  if (state->num_globals > 0) {
-    state->globals = calloc(bf->global_area_size, sizeof(aint));
-    if (!state->globals) {
-      fprintf(stderr, "Failed to allocate global variables\n");
-      free(state);
-      return NULL;
-    }
-  } else {
-    state->globals = NULL;
-  }
-
   /* Create call stack */
-  state->callstack = create_callstack();
+  state->callstack = create_callstack(bf->global_area_size);
   if (!state->callstack) {
     fprintf(stderr, "Failed to create call stack\n");
     free(state);
@@ -61,9 +44,6 @@ interpreter_state_t *create_interpreter_state(bytefile *bf) {
 }
 void destroy_interpreter_state(interpreter_state_t *state) {
   if (state) {
-    if (state->globals) {
-      free(state->globals);
-    }
     if (state->callstack) {
       destroy_callstack(state->callstack);
     }
@@ -109,43 +89,5 @@ error_code_e state_jmp(interpreter_state_t *state, int32_t offset) {
   }
 
   state->ip = state->bf->code_ptr + offset;
-  return ERROR_NONE;
-}
-
-/* Globals */
-error_code_e state_get_glob(interpreter_state_t *state, uint32_t index,
-                            aint *ret_val) {
-  if (index >= state->num_globals) {
-    fprintf(
-        stderr,
-        "vm: global index out of range: %d(num globals=%lu) at ip=0x%.8lx\n",
-        index, state->num_globals, state->ip - state->bf->code_ptr - 1);
-    return ERROR_GLOB_IDX_OUT_OF_RANGE;
-  }
-  *ret_val = state->globals[index];
-  return ERROR_NONE;
-}
-error_code_e state_get_glob_addr(struct interpreter_state_t *state,
-                                 uint32_t index, aint **ret_addr) {
-  if (index >= state->num_globals) {
-    fprintf(
-        stderr,
-        "vm: global index out of range: %d(num globals=%lu) at ip=0x%.8lx\n",
-        index, state->num_globals, state->ip - state->bf->code_ptr - 1);
-    return ERROR_GLOB_IDX_OUT_OF_RANGE;
-  }
-  *ret_addr = &state->globals[index];
-  return ERROR_NONE;
-}
-error_code_e state_set_glob(interpreter_state_t *state, uint32_t index,
-                            aint value) {
-  if (index >= state->num_globals) {
-    fprintf(
-        stderr,
-        "vm: global index out of range: %d(num globals=%lu) at ip=0x%.8lx\n",
-        index, state->num_globals, state->ip - state->bf->code_ptr - 1);
-    return ERROR_GLOB_IDX_OUT_OF_RANGE;
-  }
-  state->globals[index] = value;
   return ERROR_NONE;
 }

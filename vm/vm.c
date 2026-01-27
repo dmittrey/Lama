@@ -393,12 +393,11 @@ static error_code_e op_elem(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_ld_g(FILE *f, struct interpreter_state_t *state,
                             char l) {
-  aint val;
+  csval_t val;
   int index = state_read_int(state);
   DBG("LD\tG(%d)", index);
-  RETURN_IF_ERROR(state_get_glob(state, index, &val));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_from_aint(val)));
+  RETURN_IF_ERROR(callstack_get_glob(state_cs(state), index, &val));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
   return ERROR_NONE;
 }
 
@@ -442,19 +441,17 @@ static error_code_e op_ld_c(FILE *f, struct interpreter_state_t *state,
 
 static error_code_e op_lda_g(FILE *f, struct interpreter_state_t *state,
                              char l) {
-  aint *ref;
   int32_t index = state_read_int(state);
   DBG("LDA\tG(%d)", index);
-  RETURN_IF_ERROR(state_get_glob_addr(state, index, &ref));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_extern((aint)ref)));
+  csval_t ref;
+  RETURN_IF_ERROR(callstack_get_glob_addr(state_cs(state), index, &ref));
+  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), ref));
   return ERROR_NONE;
 }
 
 static error_code_e op_lda_l(FILE *f, struct interpreter_state_t *state,
                              char l) {
   int32_t index = state_read_int(state);
-
   DBG("LDA\tL(%d)", index);
   csval_t ref;
   RETURN_IF_ERROR(callstack_get_local_addr(state_cs(state), index, &ref));
@@ -494,9 +491,7 @@ static error_code_e op_st_g(FILE *f, struct interpreter_state_t *state,
   int index = state_read_int(state);
   DBG("ST\tG(%d)", index);
   RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
-  aint val_aint;
-  RETURN_IF_ERROR(csval_to_aint_checked(val, &val_aint));
-  RETURN_IF_ERROR(state_set_glob(state, index, val_aint));
+  RETURN_IF_ERROR(callstack_set_glob(state_cs(state), index, val));
   RETURN_IF_ERROR(
       callstack_push_operand(state_cs(state), val)); /* Push back onto stack */
   return ERROR_NONE;
@@ -617,8 +612,13 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
     case 0: { // G(m)
       uint32_t index = state_read_int(state);
       DBG(" G(%d)", index);
-      aint *cell = NULL;
-      RETURN_IF_ERROR(state_get_glob_addr(state, index, &cell));
+      /* Capture argument by stable heap cell (value at closure creation
+       * time). */
+      csval_t v_val;
+      aint v;
+      RETURN_IF_ERROR(callstack_get_glob(state_cs(state), index, &v_val));
+      RETURN_IF_ERROR(csval_to_aint_checked(v_val, &v));
+      aint *cell = alloc_capture_cell(v);
       args[i + 1] = (aint)cell;
     } break;
 

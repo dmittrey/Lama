@@ -11,47 +11,35 @@
 #define CALLSTACK_INITIAL_SIZE 64
 #define CALLSTACK_MAX_SIZE 32768
 
-#define CS_ASSERT_UNBOXED(memo, x)                                             \
-  do {                                                                         \
-    if (!UNBOXED(x)) {                                                         \
-      fprintf(stderr, "unboxed value expected in %s\n", memo);                 \
-      return ERROR_NOT_UNBOXED;                                                \
-    }                                                                          \
-  } while (0)
-
-#define CS_ASSERT_BOXED(memo, x)                                               \
-  do {                                                                         \
-    if (UNBOXED(x)) {                                                          \
-      fprintf(stderr, "boxed value expected in %s\n", memo);                   \
-      return ERROR_NOT_BOXED;                                                  \
-    }                                                                          \
-  } while (0)
-
 extern size_t __gc_stack_top, __gc_stack_bottom;
 
 /*
 Call frame memory layout(RAM):
-+-----------------------------+
-| arguments (csval_t)         |
-+-----------------------------+ <- (SP when push new frame)
-| closure | BOX(0)            | closure ptr or BOX(0)
-+-----------------------------+
-| ret_off (csval_t)           |
-+-----------------------------+
-| nargs (csval_t)             |
-+-----------------------------+
-| prev_fp (csval_t)           |   // 0 => no prev frame
-+-----------------------------+ <- FP
-| nlocals (csval_t)           |
-+--------------------------------+
-| locals[0..nlocals-1] (csval_t) |   // VM values
-+--------------------------------+
-| noperands (csval_t)         |
-+-----------------------------+
-| operands  (csval_t[])       |   // VM values
-+-----------------------------+ <- SP
-| free                        |
-+-----------------------------+
++----------------------------------+ <- ram_layout
+| globals[0..nglobals-1] (csval_t) |
++----------------------------------+
+| ...                              |
++----------------------------------+
+| arguments (csval_t)              |
++----------------------------------+ <- (SP when push new frame)
+| closure | BOX(0)                 | closure ptr or BOX(0)
++----------------------------------+
+| ret_off (csval_t)                |
++----------------------------------+
+| nargs (csval_t)                  |
++----------------------------------+
+| prev_fp (csval_t)                |   // 0 => no prev frame
++----------------------------------+ <- FP
+| nlocals (csval_t)                |
++----------------------------------+
+| locals[0..nlocals-1] (csval_t)   |   // VM values
++----------------------------------+
+| noperands (csval_t)              |
++----------------------------------+
+| operands  (csval_t[])            |   // VM values
++----------------------------------+ <- SP
+| free                             |
++----------------------------------+
 ||
 || grow down
 \/
@@ -64,11 +52,10 @@ typedef struct callstack_t {
 
   /* Internal */
   size_t capacity; /* allocated capacity (csval slots) */
+  size_t nframes;  /* prevent underflow */
 
-  /* Prevent underflow */
-  // TODO Переделать на секцию активации на дне стека чтобы при обращении можно
-  // было почистить и вернуть в pool
-  size_t nframes;
+  /* Globals */
+  size_t nglobals; /* number of globals */
 
   /* RAM layout */
   aint *ram_layout;
@@ -81,6 +68,12 @@ static inline void gc_sync(callstack_t *stack) {
       (size_t)(stack->ram_layout + (stack->sp * (size_t)CSVAL_WORDS));
 }
 
+/* Amount of vals to size of this area in stack */
+static inline size_t nvals_to_size(size_t nwords) {
+  return nwords * (size_t)CSVAL_WORDS * sizeof(aint);
+}
+
+/* Number of val slot to stack idx */
 static inline size_t slot_word_index(size_t slot) {
   return slot * (size_t)CSVAL_WORDS;
 }
@@ -187,6 +180,9 @@ static inline error_code_e write_imm_slot(callstack_t *s, size_t slot,
 }
 
 /* Segment base idx (relative to fp) */
+static inline size_t globals_base_idx(callstack_t *s) { /* layout start */
+  return 0;
+}
 static inline size_t nlocals_base_idx(callstack_t *s) { return s->fp; }
 static inline uint32_t nlocals(callstack_t *s) {
   if (s->nframes == 0) {
@@ -250,10 +246,11 @@ uint32_t callstack_nlocals(callstack_t *s) { return nlocals(s); }
 uint32_t callstack_noperands(callstack_t *s) { return noperands(s); }
 uint32_t callstack_nargs(callstack_t *s) { return nargs(s); }
 size_t callstack_nframes(callstack_t *s) { return s->nframes; }
+size_t callstack_nglobals(callstack_t *s) { return s->nglobals; }
 aint callstack_closure(callstack_t *s) { return closure(s); }
 
 /* Lifecycle */
-callstack_t *create_callstack() {
+callstack_t *create_callstack(int nglobals) {
   __gc_init();
 
   callstack_t *stack = malloc(sizeof(callstack_t));
@@ -262,16 +259,21 @@ callstack_t *create_callstack() {
   }
 
   /* RAM layout */
-  stack->ram_layout = malloc((size_t)CALLSTACK_INITIAL_SIZE *
-                             (size_t)CSVAL_WORDS * sizeof(aint));
+  stack->ram_layout = malloc(nvals_to_size(CALLSTACK_INITIAL_SIZE));
   if (!stack->ram_layout) {
+    fprintf(stderr, "callstack: unable to allocate size=%lu\n",
+            nvals_to_size(CALLSTACK_INITIAL_SIZE));
     free(stack);
     return NULL;
   }
 
+  /* Globals */
+  stack->nglobals = nglobals;
+  size_t glob_area_sz = nvals_to_size(nglobals);
+
   /* Virt regs */
-  stack->fp = 0;
-  stack->sp = 0;
+  stack->fp = glob_area_sz;
+  stack->sp = glob_area_sz; // Start callstack from global area
 
   /* Internal */
   stack->capacity = (size_t)CALLSTACK_INITIAL_SIZE;
@@ -409,27 +411,24 @@ error_code_e callstack_set_arg(callstack_t *stack, uint32_t index,
   size_t base = args_base_idx(stack);
   return slot_write(stack, base + index, value);
 }
+error_code_e callstack_get_glob(struct callstack_t *stack, uint32_t index,
+                                csval_t *ret) {
+  uint32_t nglobals_ = stack->nglobals;
+  if (index >= nglobals_)
+    return ERROR_GLOB_IDX_OUT_OF_RANGE;
 
-error_code_e callstack_get_local_addr(callstack_t *stack, uint32_t index,
-                                      csval_t *ret) {
-  uint32_t nlocals_ = nlocals(stack);
-  if (index >= nlocals_) {
-    return ERROR_LOCL_IDX_OUT_OF_RANGE;
-  }
-
-  size_t slot = locals_base_idx(stack) + index;
-  *ret = csval_intern(BOX((aint)slot));
+  size_t base = globals_base_idx(stack);
+  *ret = slot_read(stack, base + index);
   return ERROR_NONE;
 }
-error_code_e callstack_get_arg_addr(callstack_t *stack, uint32_t index,
-                                    csval_t *ret) {
-  uint32_t nargs_ = nargs(stack);
-  if (index >= nargs_) {
-    return ERROR_ARG_IDX_OUT_OF_RANGE;
-  }
+error_code_e callstack_set_glob(struct callstack_t *stack, uint32_t index,
+                                csval_t value) {
+  uint32_t nglobals_ = stack->nglobals;
+  if (index >= nglobals_)
+    return ERROR_GLOB_IDX_OUT_OF_RANGE;
 
-  size_t slot = args_base_idx(stack) + index;
-  *ret = csval_intern(BOX((aint)slot));
+  size_t base = globals_base_idx(stack);
+  slot_write(stack, base + index, value);
   return ERROR_NONE;
 }
 
@@ -503,5 +502,40 @@ error_code_e callstack_pop_n_operands(struct callstack_t *stack, uint32_t n,
   gc_sync(stack);
 
   *ret = csval_intern(BOX((aint)first));
+  return ERROR_NONE;
+}
+
+/* Reference */
+error_code_e callstack_get_local_addr(callstack_t *stack, uint32_t index,
+                                      csval_t *ret) {
+  uint32_t nlocals_ = nlocals(stack);
+  if (index >= nlocals_) {
+    return ERROR_LOCL_IDX_OUT_OF_RANGE;
+  }
+
+  size_t slot = locals_base_idx(stack) + index;
+  *ret = csval_intern(BOX((aint)slot));
+  return ERROR_NONE;
+}
+error_code_e callstack_get_arg_addr(callstack_t *stack, uint32_t index,
+                                    csval_t *ret) {
+  uint32_t nargs_ = nargs(stack);
+  if (index >= nargs_) {
+    return ERROR_ARG_IDX_OUT_OF_RANGE;
+  }
+
+  size_t slot = args_base_idx(stack) + index;
+  *ret = csval_intern(BOX((aint)slot));
+  return ERROR_NONE;
+}
+error_code_e callstack_get_glob_addr(callstack_t *stack, uint32_t index,
+                                     csval_t *ret) {
+  uint32_t nargs_ = stack->nglobals;
+  if (index >= nargs_) {
+    return ERROR_GLOB_IDX_OUT_OF_RANGE;
+  }
+
+  size_t slot = globals_base_idx(stack) + index;
+  *ret = csval_intern(BOX((aint)slot));
   return ERROR_NONE;
 }
