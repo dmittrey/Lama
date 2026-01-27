@@ -27,6 +27,8 @@
     }                                                                          \
   } while (0)
 
+extern size_t __gc_stack_top, __gc_stack_bottom;
+
 /*
 Call frame memory layout(RAM):
 +-----------------------------+
@@ -74,9 +76,9 @@ typedef struct callstack_t {
 
 /* Helpers */
 static inline void gc_sync(callstack_t *stack) {
-  gc_set_vm_stack_region(
-      (void *)stack->ram_layout,
-      (void *)(stack->ram_layout + (stack->sp * (size_t)CSVAL_WORDS)));
+  __gc_stack_top = (size_t)stack->ram_layout;
+  __gc_stack_bottom =
+      (size_t)(stack->ram_layout + (stack->sp * (size_t)CSVAL_WORDS));
 }
 
 static inline size_t slot_word_index(size_t slot) {
