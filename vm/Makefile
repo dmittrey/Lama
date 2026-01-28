@@ -13,7 +13,7 @@ DISABLE_WARNINGS=-Wno-shift-negative-value
 COMMON_FLAGS=$(DISABLE_WARNINGS) -g -fstack-protector-all $(ARCH) --std=c11 -I../runtime
 PROD_FLAGS=$(COMMON_FLAGS) -DLAMA_ENV
 
-SRC=main.c vm.c bytecode.c state.c callstack.c
+SRC=main.c vm.c bytecode.c state.c
 
 # Sanitizer flags
 ASAN_FLAGS=-fsanitize=address -fno-omit-frame-pointer
