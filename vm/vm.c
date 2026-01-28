@@ -8,6 +8,16 @@
 #include "state.h"
 #include "vm.h"
 
+/* Virtual regs */
+size_t __cs_fp = 0; /* slot index of nlocals for current frame */
+size_t __cs_sp = 0; /* slot index of next free entry */
+
+/* Internal */
+size_t __cs_cap = 0;
+size_t __cs_nframes = 0;
+size_t __cs_nglob = 0;
+aint *__cs_ram_layout = NULL;
+
 #ifdef DEBUG
 #define DBG(...) fprintf(f, __VA_ARGS__)
 #else
@@ -100,50 +110,30 @@ static const char *pats[] = {"=str", "#string", "#array", "#sexp",
                              "#ref", "#val",    "#fun"};
 static const char *lds[] = {"LD", "LDA", "ST"};
 
-static inline csval_t csval_from_aint(aint v) {
-  return UNBOXED(v) ? csval_imm(v) : csval_extern(v);
-}
-
-static inline error_code_e csval_to_aint_checked(csval_t v, aint *out) {
-  if (v.ty == CS_INTERNAL_REF) {
-    return ERROR_NOT_BOXED;
-  }
-  *out = v.val;
-  return ERROR_NONE;
-}
-
-static inline error_code_e csval_to_imm_checked(csval_t v, aint *out) {
-  if (v.ty != CS_IMM || !UNBOXED(v.val)) {
-    return ERROR_NOT_UNBOXED;
-  }
-  *out = v.val;
-  return ERROR_NONE;
-}
-
 static inline csval_t csval_from_slot_words(const aint *slot_words) {
   aint type_word = slot_words[0];
   assert(UNBOXED(type_word));
   return (csval_t){.ty = (csval_type_e)UNBOX(type_word), .val = slot_words[1]};
 }
 
-static inline error_code_e store_internal_ref(struct callstack_t *stack,
+static inline error_code_e store_by_internal_ref(struct callstack_t *stack,
                                               csval_t ref, csval_t value) {
   aint *slot_words = NULL;
-  RETURN_IF_ERROR(csval_to_ref(stack, ref, &slot_words));
+  RETURN_IF_ERROR(csval_to_ref_aintp(ref, &slot_words));
   slot_words[0] = BOX((aint)value.ty);
   slot_words[1] = value.val;
   return ERROR_NONE;
 }
 
-static inline error_code_e store_ref(struct callstack_t *stack, csval_t ref,
+static inline error_code_e store_by_ref(struct callstack_t *stack, csval_t ref,
                                      csval_t value) {
   if (ref.ty == CS_INTERNAL_REF) {
-    return store_internal_ref(stack, ref, value);
+    return store_by_internal_ref(stack, ref, value);
   }
   aint *refp = NULL;
-  RETURN_IF_ERROR(csval_to_ref(stack, ref, &refp));
+  RETURN_IF_ERROR(csval_to_ref_aintp(ref, &refp));
   aint v;
-  RETURN_IF_ERROR(csval_to_aint_checked(value, &v));
+  RETURN_IF_ERROR(csval_to_imm_aint(value, &v));
   Bsta(refp, (aint)refp, (void *)v);
   return ERROR_NONE;
 }
@@ -170,10 +160,10 @@ static error_code_e op_binop(FILE *f, struct interpreter_state_t *state,
 
   csval_t a_val, b_val;
   aint a, b;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &b_val));
-  RETURN_IF_ERROR(csval_to_aint_checked(b_val, &b));
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &a_val));
-  RETURN_IF_ERROR(csval_to_aint_checked(a_val, &a));
+  RETURN_IF_ERROR(callstack_pop_operand(&b_val));
+  b = csval_to_aint(b_val);
+  RETURN_IF_ERROR(callstack_pop_operand(&a_val));
+  a = csval_to_aint(a_val);
   aint result = 0;
 
   switch (l) {
@@ -222,8 +212,7 @@ static error_code_e op_binop(FILE *f, struct interpreter_state_t *state,
 
   DBG("%" PRIdAI " %s %" PRIdAI " = %" PRIdAI, UNBOX(a), op_name, UNBOX(b),
       UNBOX(result));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_from_aint(result)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_from_aint(result)));
   return ERROR_NONE;
 }
 
@@ -231,8 +220,7 @@ static error_code_e op_const(FILE *f, struct interpreter_state_t *state,
                              char l) {
   int32_t value = state_read_int(state);
   DBG("CONST\t%d", value);
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_imm(BOX(value))));
+  RETURN_IF_ERROR(callstack_push_operand(csval_imm(value)));
   return ERROR_NONE;
 }
 
@@ -240,8 +228,8 @@ static error_code_e op_string(FILE *f, struct interpreter_state_t *state,
                               char l) {
   char *str = state_read_string(state);
   DBG("STRING (%s)\n", str);
-  RETURN_IF_ERROR(callstack_push_operand(
-      state_cs(state), csval_extern((aint)Bstring((aint *)&str))));
+  RETURN_IF_ERROR(
+      callstack_push_operand(csval_extern((aint *)Bstring((aint *)&str))));
   return ERROR_NONE;
 }
 
@@ -252,59 +240,58 @@ static error_code_e op_sexp(FILE *f, struct interpreter_state_t *state,
   int32_t arity = state_read_int(state);
   DBG("SEXP\t%s %d", tag, arity);
   aint th = LtagHash(tag);
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(th)));
-  RETURN_IF_ERROR(
-      callstack_pop_n_operands(state_cs(state), arity + 1, &args_ref));
+  csval_t pushed_tag = csval_from_aint(th);
+  RETURN_IF_ERROR(callstack_push_operand(pushed_tag));
+  RETURN_IF_ERROR(callstack_pop_n_operands(arity + 1, &args_ref));
   aint *slot_words = NULL;
-  RETURN_IF_ERROR(csval_to_ref(state_cs(state), args_ref, &slot_words));
+  RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
   uint32_t nargs = (uint32_t)(arity + 1);
   aint args[nargs];
   for (uint32_t i = 0; i < nargs; i++) {
     csval_t v = csval_from_slot_words(slot_words + (i * CSVAL_WORDS));
-    RETURN_IF_ERROR(csval_to_aint_checked(v, &args[i]));
+    args[i] = csval_to_aint(v);
   }
   void *r = Bsexp(args, BOX(nargs /* With tag*/));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_extern((aint)r)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r)));
   return ERROR_NONE;
 }
 
 static error_code_e op_sti(FILE *f, struct interpreter_state_t *state, char l) {
   csval_t val;
   csval_t ref;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &ref));
+  RETURN_IF_ERROR(callstack_pop_operand(&val));
+  RETURN_IF_ERROR(callstack_pop_operand(&ref));
   DBG("STI");
-  RETURN_IF_ERROR(store_ref(state_cs(state), ref, val));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
+  RETURN_IF_ERROR(store_by_ref(state_cs(state), ref, val));
+  RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
 static error_code_e op_sta(FILE *f, struct interpreter_state_t *state, char l) {
   csval_t val;
   csval_t sec_op;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &sec_op));
+  RETURN_IF_ERROR(callstack_pop_operand(&val));
+  RETURN_IF_ERROR(callstack_pop_operand(&sec_op));
 
   // case AGGREGATE: agg idx val
   if (sec_op.ty == CS_IMM) {
     csval_t agg;
-    aint agg_val;
+    aint *agg_val;
     aint idx_val;
     aint val_aint;
-    RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &agg));
-    RETURN_IF_ERROR(csval_to_aint_checked(agg, &agg_val));
-    RETURN_IF_ERROR(csval_to_imm_checked(sec_op, &idx_val));
-    RETURN_IF_ERROR(csval_to_aint_checked(val, &val_aint));
-    DBG("STA\t%d %" PRIdAI, UNBOX(idx_val), UNBOX(val_aint));
-    Bsta((void *)agg_val, idx_val, (void *)val_aint);
+    RETURN_IF_ERROR(callstack_pop_operand(&agg));
+    RETURN_IF_ERROR(csval_to_ref_aintp(agg, &agg_val));
+    RETURN_IF_ERROR(csval_to_imm_aint(sec_op, &idx_val));
+    RETURN_IF_ERROR(csval_to_imm_aint(val, &val_aint));
+    DBG("STA\t%lld %" PRIdAI, UNBOX(idx_val), UNBOX(val_aint));
+    Bsta(agg_val, idx_val, (void *)val_aint);
   }
   // case REF: ref val
   else {
     DBG("STA");
-    RETURN_IF_ERROR(store_ref(state_cs(state), sec_op, val));
+    RETURN_IF_ERROR(store_by_ref(state_cs(state), sec_op, val));
   }
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
+  RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
@@ -318,14 +305,14 @@ static error_code_e op_jmp(FILE *f, struct interpreter_state_t *state, char l) {
 static error_code_e op_end(FILE *f, struct interpreter_state_t *state, char l) {
   csval_t callee_ret;
   uint32_t ret_off;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &callee_ret));
-  RETURN_IF_ERROR(callstack_pop_frame(state_cs(state), &ret_off));
-  if (callstack_nframes(state_cs(state)) == 0) {
+  RETURN_IF_ERROR(callstack_pop_operand(&callee_ret));
+  RETURN_IF_ERROR(cs_pop_frame(&ret_off));
+  if (__cs_nframes == 0) {
     return ERROR_STOP;
   }
-  DBG("END\t%p", ret_off);
-  RETURN_IF_ERROR(callstack_push_operand(
-      state_cs(state), callee_ret)); // Put retval on caller stack
+  DBG("END\t%u", ret_off);
+  RETURN_IF_ERROR(
+      callstack_push_operand(callee_ret)); // Put retval on caller stack
   RETURN_IF_ERROR(state_jmp(state, ret_off));
   return ERROR_NONE;
 }
@@ -333,14 +320,14 @@ static error_code_e op_end(FILE *f, struct interpreter_state_t *state, char l) {
 static error_code_e op_ret(FILE *f, struct interpreter_state_t *state, char l) {
   csval_t callee_ret;
   uint32_t ret_off;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &callee_ret));
-  RETURN_IF_ERROR(callstack_pop_frame(state_cs(state), &ret_off));
-  if (callstack_nframes(state_cs(state)) == 0) {
+  RETURN_IF_ERROR(callstack_pop_operand(&callee_ret));
+  RETURN_IF_ERROR(cs_pop_frame(&ret_off));
+  if (__cs_nframes == 0) {
     return ERROR_STOP;
   }
-  DBG("RET\t%p", ret_off);
-  RETURN_IF_ERROR(callstack_push_operand(
-      state_cs(state), callee_ret)); // Put retval on caller stack
+  DBG("RET\t%u", ret_off);
+  RETURN_IF_ERROR(
+      callstack_push_operand(callee_ret)); // Put retval on caller stack
   RETURN_IF_ERROR(state_jmp(state, ret_off));
   return ERROR_NONE;
 }
@@ -349,16 +336,16 @@ static error_code_e op_drop(FILE *f, struct interpreter_state_t *state,
                             char l) {
   csval_t val;
   DBG("DROP");
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  RETURN_IF_ERROR(callstack_pop_operand(&val));
   return ERROR_NONE;
 }
 
 static error_code_e op_dup(FILE *f, struct interpreter_state_t *state, char l) {
   csval_t value;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &value));
+  RETURN_IF_ERROR(callstack_pop_operand(&value));
   DBG("DUP");
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), value));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), value));
+  RETURN_IF_ERROR(callstack_push_operand(value));
+  RETURN_IF_ERROR(callstack_push_operand(value));
   return ERROR_NONE;
 }
 
@@ -366,11 +353,11 @@ static error_code_e op_swap(FILE *f, struct interpreter_state_t *state,
                             char l) {
   csval_t a;
   csval_t b;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &a));
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &b));
+  RETURN_IF_ERROR(callstack_pop_operand(&a));
+  RETURN_IF_ERROR(callstack_pop_operand(&b));
   DBG("SWAP");
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), a));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), b));
+  RETURN_IF_ERROR(callstack_push_operand(a));
+  RETURN_IF_ERROR(callstack_push_operand(b));
   return ERROR_NONE;
 }
 
@@ -380,14 +367,14 @@ static error_code_e op_elem(FILE *f, struct interpreter_state_t *state,
   csval_t agg;
   aint idx_val;
   aint agg_val;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &idx));
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &agg));
-  RETURN_IF_ERROR(csval_to_imm_checked(idx, &idx_val));
-  RETURN_IF_ERROR(csval_to_aint_checked(agg, &agg_val));
-  DBG("ELEM\t%d %" PRIdAI, UNBOX(idx_val), UNBOX(agg_val));
+  RETURN_IF_ERROR(callstack_pop_operand(&idx));
+  RETURN_IF_ERROR(callstack_pop_operand(&agg));
+  RETURN_IF_ERROR(csval_to_imm_aint(idx, &idx_val));
+  agg_val = csval_to_aint(agg);
+  DBG("ELEM\t%lld %" PRIdAI, UNBOX(idx_val), UNBOX(agg_val));
   void *r = Belem((void *)agg_val, idx_val);
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_from_aint((aint)r)));
+  csval_t pushed = csval_from_aint((aint)r);
+  RETURN_IF_ERROR(callstack_push_operand(pushed));
   return ERROR_NONE;
 }
 
@@ -396,8 +383,8 @@ static error_code_e op_ld_g(FILE *f, struct interpreter_state_t *state,
   csval_t val;
   int index = state_read_int(state);
   DBG("LD\tG(%d)", index);
-  RETURN_IF_ERROR(callstack_get_glob(state_cs(state), index, &val));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
+  RETURN_IF_ERROR(callstack_get_glob(index, &val));
+  RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
@@ -406,8 +393,8 @@ static error_code_e op_ld_l(FILE *f, struct interpreter_state_t *state,
   csval_t val;
   int index = state_read_int(state);
   DBG("LD\tL(%d)", index);
-  RETURN_IF_ERROR(callstack_get_local(state_cs(state), index, &val));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
+  RETURN_IF_ERROR(callstack_get_local(index, &val));
+  RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
@@ -416,15 +403,15 @@ static error_code_e op_ld_a(FILE *f, struct interpreter_state_t *state,
   csval_t val;
   int index = state_read_int(state);
   DBG("LD\tA(%d)", index);
-  RETURN_IF_ERROR(callstack_get_arg(state_cs(state), index, &val));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
+  RETURN_IF_ERROR(callstack_get_arg(index, &val));
+  RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
 static error_code_e op_ld_c(FILE *f, struct interpreter_state_t *state,
                             char l) {
   int32_t index = state_read_int(state);
-  aint clos = callstack_closure(state_cs(state));
+  aint clos = cs_clos();
   if (UNBOXED(clos) && UNBOX(clos) == 0) {
     DBG("LD\tC(%d): no closure in current frame\n", index);
     return ERROR_NO_CLOSURE_IN_CURRENT_FRAME;
@@ -433,9 +420,8 @@ static error_code_e op_ld_c(FILE *f, struct interpreter_state_t *state,
   DBG("LD\tC(%d)", index);
   aint ref = closure_capture_ref(clos, (uint32_t)index);
   aint *cell = NULL;
-  RETURN_IF_ERROR(csval_to_ref(state_cs(state), csval_extern(ref), &cell));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_from_aint(*cell)));
+  RETURN_IF_ERROR(csval_to_ref_aintp(csval_extern((aint *)ref), &cell));
+  RETURN_IF_ERROR(callstack_push_operand(csval_from_aint(*cell)));
   return ERROR_NONE;
 }
 
@@ -444,8 +430,8 @@ static error_code_e op_lda_g(FILE *f, struct interpreter_state_t *state,
   int32_t index = state_read_int(state);
   DBG("LDA\tG(%d)", index);
   csval_t ref;
-  RETURN_IF_ERROR(callstack_get_glob_addr(state_cs(state), index, &ref));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), ref));
+  RETURN_IF_ERROR(callstack_get_glob_addr(index, &ref));
+  RETURN_IF_ERROR(callstack_push_operand(ref));
   return ERROR_NONE;
 }
 
@@ -454,8 +440,8 @@ static error_code_e op_lda_l(FILE *f, struct interpreter_state_t *state,
   int32_t index = state_read_int(state);
   DBG("LDA\tL(%d)", index);
   csval_t ref;
-  RETURN_IF_ERROR(callstack_get_local_addr(state_cs(state), index, &ref));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), ref));
+  RETURN_IF_ERROR(callstack_get_local_addr(index, &ref));
+  RETURN_IF_ERROR(callstack_push_operand(ref));
   return ERROR_NONE;
 }
 
@@ -464,15 +450,15 @@ static error_code_e op_lda_a(FILE *f, struct interpreter_state_t *state,
   int32_t index = state_read_int(state);
   DBG("LDA\tA(%d)", index);
   csval_t ref;
-  RETURN_IF_ERROR(callstack_get_arg_addr(state_cs(state), index, &ref));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), ref));
+  RETURN_IF_ERROR(callstack_get_arg_addr(index, &ref));
+  RETURN_IF_ERROR(callstack_push_operand(ref));
   return ERROR_NONE;
 }
 
 static error_code_e op_lda_c(FILE *f, struct interpreter_state_t *state,
                              char l) {
   int32_t index = state_read_int(state);
-  aint clos = callstack_closure(state_cs(state));
+  aint clos = cs_clos();
   if (UNBOXED(clos) && UNBOX(clos) == 0) {
     DBG("LDA\tC(%d): no closure in current frame\n", index);
     return ERROR_NO_CLOSURE_IN_CURRENT_FRAME;
@@ -480,8 +466,8 @@ static error_code_e op_lda_c(FILE *f, struct interpreter_state_t *state,
 
   DBG("LDA\tC(%d)", index);
   aint ref = closure_capture_ref(clos, (uint32_t)index);
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state),
-                                         csval_extern(ref))); // direct ref
+  RETURN_IF_ERROR(
+      callstack_push_operand(csval_extern((aint *)ref))); // direct ref
   return ERROR_NONE;
 }
 
@@ -490,10 +476,9 @@ static error_code_e op_st_g(FILE *f, struct interpreter_state_t *state,
   csval_t val;
   int index = state_read_int(state);
   DBG("ST\tG(%d)", index);
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
-  RETURN_IF_ERROR(callstack_set_glob(state_cs(state), index, val));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), val)); /* Push back onto stack */
+  RETURN_IF_ERROR(callstack_pop_operand(&val));
+  RETURN_IF_ERROR(callstack_set_glob(index, val));
+  RETURN_IF_ERROR(callstack_push_operand(val)); /* Push back onto stack */
   return ERROR_NONE;
 }
 
@@ -502,10 +487,9 @@ static error_code_e op_st_l(FILE *f, struct interpreter_state_t *state,
   csval_t val;
   int index = state_read_int(state);
   DBG("ST\tL(%d)", index);
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
-  RETURN_IF_ERROR(callstack_set_local(state_cs(state), index, val));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), val)); /* Push back onto stack */
+  RETURN_IF_ERROR(callstack_pop_operand(&val));
+  RETURN_IF_ERROR(callstack_set_local(index, val));
+  RETURN_IF_ERROR(callstack_push_operand(val)); /* Push back onto stack */
   return ERROR_NONE;
 }
 
@@ -514,10 +498,9 @@ static error_code_e op_st_a(FILE *f, struct interpreter_state_t *state,
   csval_t val;
   int index = state_read_int(state);
   DBG("ST\tA(%d)", index);
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
-  RETURN_IF_ERROR(callstack_set_arg(state_cs(state), index, val));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), val)); /* Push back onto stack */
+  RETURN_IF_ERROR(callstack_pop_operand(&val));
+  RETURN_IF_ERROR(callstack_set_arg(index, val));
+  RETURN_IF_ERROR(callstack_push_operand(val)); /* Push back onto stack */
   return ERROR_NONE;
 }
 
@@ -525,11 +508,11 @@ static error_code_e op_st_c(FILE *f, struct interpreter_state_t *state,
                             char l) {
   int32_t index = state_read_int(state);
   csval_t val;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
+  RETURN_IF_ERROR(callstack_pop_operand(&val));
   aint a;
-  RETURN_IF_ERROR(csval_to_aint_checked(val, &a));
+  a = csval_to_aint(val);
 
-  aint clos = callstack_closure(state_cs(state));
+  aint clos = cs_clos();
   if (UNBOXED(clos) && UNBOX(clos) == 0) {
     DBG("ST\tC(%d): no closure in current frame\n", index);
     return ERROR_NO_CLOSURE_IN_CURRENT_FRAME;
@@ -538,10 +521,10 @@ static error_code_e op_st_c(FILE *f, struct interpreter_state_t *state,
   DBG("ST\tC(%d)", index);
   aint ref = closure_capture_ref(clos, (uint32_t)index);
   aint *cell = NULL;
-  RETURN_IF_ERROR(csval_to_ref(state_cs(state), csval_extern(ref), &cell));
+  RETURN_IF_ERROR(csval_to_ref_aintp(csval_extern((aint *)ref), &cell));
   *cell = a;
 
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), val));
+  RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
@@ -550,9 +533,10 @@ static error_code_e op_cjmpz(FILE *f, struct interpreter_state_t *state,
   csval_t val;
   aint cond;
   int32_t l_offset = state_read_int(state);
-  DBG("CJMPz\t0x%.8lx", l_offset);
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
-  RETURN_IF_ERROR(csval_to_imm(state_cs(state), val, &cond));
+  DBG("CJMPz\t0x%.8x", l_offset);
+  RETURN_IF_ERROR(callstack_pop_operand(&val));
+  RETURN_IF_ERROR(csval_to_imm_aint(val, &cond));
+
   if (!UNBOX(cond))
     RETURN_IF_ERROR(state_jmp(state, l_offset));
   return ERROR_NONE;
@@ -563,9 +547,10 @@ static error_code_e op_cjmpnz(FILE *f, struct interpreter_state_t *state,
   csval_t val;
   aint cond;
   int32_t l_offset = state_read_int(state);
-  DBG("CJMPnz\t0x%.8lx", l_offset);
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &val));
-  RETURN_IF_ERROR(csval_to_imm(state_cs(state), val, &cond));
+  DBG("CJMPnz\t0x%.8x", l_offset);
+  RETURN_IF_ERROR(callstack_pop_operand(&val));
+  RETURN_IF_ERROR(csval_to_imm_aint(val, &cond));
+
   if (UNBOX(cond))
     RETURN_IF_ERROR(state_jmp(state, l_offset));
   return ERROR_NONE;
@@ -576,7 +561,7 @@ static error_code_e op_begin(FILE *f, struct interpreter_state_t *state,
   int nargs = state_read_int(state);
   int nlocals = state_read_int(state);
   DBG("BEGIN\t%d %d", nargs, nlocals);
-  RETURN_IF_ERROR(callstack_alloc_locals(state_cs(state), nlocals));
+  RETURN_IF_ERROR(cs_alloc_locals(nlocals));
   return ERROR_NONE;
 }
 
@@ -584,15 +569,15 @@ static error_code_e op_cbegin(FILE *f, struct interpreter_state_t *state,
                               char l) {
   int nargs = state_read_int(state);
   int nlocals = state_read_int(state);
-  if (callstack_nframes(state_cs(state)) == 0)
-    RETURN_IF_ERROR(callstack_push_frame(state_cs(state), 0, (uint32_t)nargs));
-  if ((uint32_t)nargs != callstack_nargs(state_cs(state))) {
+  if (__cs_nframes == 0)
+    RETURN_IF_ERROR(cs_push_frame(0, (uint32_t)nargs));
+  if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
     DBG("CBEGIN\t%d\t%d: nargs mismatch\n", nargs, nlocals);
     return ERROR_NARGS_MISMATCH;
   }
 
   DBG("CBEGIN\t%d\t%d", nargs, nlocals);
-  RETURN_IF_ERROR(callstack_alloc_locals(state_cs(state), (uint32_t)nlocals));
+  RETURN_IF_ERROR(cs_alloc_locals((uint32_t)nlocals));
   return ERROR_NONE;
 }
 
@@ -616,8 +601,8 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
        * time). */
       csval_t v_val;
       aint v;
-      RETURN_IF_ERROR(callstack_get_glob(state_cs(state), index, &v_val));
-      RETURN_IF_ERROR(csval_to_aint_checked(v_val, &v));
+      RETURN_IF_ERROR(callstack_get_glob(index, &v_val));
+      v = csval_to_aint(v_val);
       aint *cell = alloc_capture_cell(v);
       args[i + 1] = (aint)cell;
     } break;
@@ -629,8 +614,8 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
        * time). */
       csval_t v_val;
       aint v;
-      RETURN_IF_ERROR(callstack_get_local(state_cs(state), index, &v_val));
-      RETURN_IF_ERROR(csval_to_aint_checked(v_val, &v));
+      RETURN_IF_ERROR(callstack_get_local(index, &v_val));
+      v = csval_to_aint(v_val);
       aint *cell = alloc_capture_cell(v);
       args[i + 1] = (aint)cell; /* direct-address ref */
     } break;
@@ -642,8 +627,8 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
        * time). */
       csval_t v_val;
       aint v;
-      RETURN_IF_ERROR(callstack_get_arg(state_cs(state), index, &v_val));
-      RETURN_IF_ERROR(csval_to_aint_checked(v_val, &v));
+      RETURN_IF_ERROR(callstack_get_arg(index, &v_val));
+      v = csval_to_aint(v_val);
       aint *cell = alloc_capture_cell(v);
       args[i + 1] = (aint)cell; /* direct-address ref */
     } break;
@@ -652,7 +637,7 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
       uint32_t index = (uint32_t)state_read_int(state);
       DBG(" C(%d)", index);
 
-      aint clos = callstack_closure(state_cs(state));
+      aint clos = cs_clos();
       if (UNBOXED(clos) && UNBOX(clos) == 0) {
         failure("CLOSURE: capture C(%u) but no closure in current frame\n",
                 index);
@@ -663,14 +648,13 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
     } break;
 
     default:
-      DBG("CLOSURE: invalid capture type %d\n", kind);
+      // DBG("CLOSURE: invalid capture type %d\n", kind);
       return ERROR_INVALID_CAPTURE_TYPE;
     }
   }
 
   aint clos_obj = (aint)Bclosure(args, BOX(n));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_extern(clos_obj)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)clos_obj)));
   return ERROR_NONE;
 }
 
@@ -683,23 +667,21 @@ static error_code_e op_callc(FILE *f, struct interpreter_state_t *state,
   csval_t *tmp = alloca(sizeof(csval_t) * (size_t)n);
 
   for (int i = (int)n - 1; i >= 0; --i) {
-    RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &tmp[i]));
+    RETURN_IF_ERROR(callstack_pop_operand(&tmp[i]));
   }
 
   csval_t clos_val;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &clos_val));
-  aint clos;
-  RETURN_IF_ERROR(csval_to_aint_checked(clos_val, &clos));
+  RETURN_IF_ERROR(callstack_pop_operand(&clos_val));
+  aint clos = csval_to_aint(clos_val);
 
   for (uint32_t i = 0; i < n; ++i) {
-    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), tmp[i]));
+    RETURN_IF_ERROR(callstack_push_operand(tmp[i]));
   }
 
   void *entry = closure_entry_ptr(clos);
 
   DBG("CALLC\t%d", n);
-  RETURN_IF_ERROR(
-      callstack_push_cframe(state_cs(state), clos, ret_off, (uint32_t)n));
+  RETURN_IF_ERROR(cs_push_cframe(clos, ret_off, (uint32_t)n));
   RETURN_IF_ERROR(
       state_jmp(state, (int32_t)((char *)entry - state_base_ip(state))));
   return ERROR_NONE;
@@ -710,8 +692,7 @@ static error_code_e op_call(FILE *f, struct interpreter_state_t *state,
   int offset = state_read_int(state);
   int nargs = state_read_int(state);
   DBG("CALL\t0x%.8x %d", offset, nargs);
-  RETURN_IF_ERROR(
-      callstack_push_frame(state_cs(state), state_ip_off(state), nargs));
+  RETURN_IF_ERROR(cs_push_frame(state_ip_off(state), (uint32_t)nargs));
   RETURN_IF_ERROR(state_jmp(state, offset));
   return ERROR_NONE;
 }
@@ -720,14 +701,14 @@ static error_code_e op_tag(FILE *f, struct interpreter_state_t *state, char l) {
   char *tag = state_read_string(state);
   int arity = state_read_int(state);
 
-  aint r;
   csval_t p_val;
-  aint p;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p_val));
-  RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+  RETURN_IF_ERROR(callstack_pop_operand(&p_val));
+  aint p = csval_to_aint(p_val);
   aint th = LtagHash(tag);
   aint an = BOX(arity);
   DBG("TAG\t%s %d", tag, arity);
+  
+  aint r;
   if (arity == 0 && UNBOXED(p)) {
     /* immediate constructor  */
     r = (UNBOX(p) == UNBOX(th)) ? BOX(1) : BOX(0);
@@ -735,7 +716,7 @@ static error_code_e op_tag(FILE *f, struct interpreter_state_t *state, char l) {
     /* sexp / array / other */
     r = Btag((void *)p, th, an);
   }
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_from_aint(r)));
   return ERROR_NONE;
 }
 
@@ -743,12 +724,11 @@ static error_code_e op_array(FILE *f, struct interpreter_state_t *state,
                              char l) {
   int size = state_read_int(state);
   csval_t p_val;
-  aint p;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p_val));
-  RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+  RETURN_IF_ERROR(callstack_pop_operand(&p_val));
+  aint p = csval_to_aint(p_val);
   DBG("ARRAY\t%d %" PRIdAI, size, UNBOX(p));
   aint r = Barray_patt((void *)p, BOX(size));
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_from_aint(r)));
   return ERROR_NONE;
 }
 
@@ -759,9 +739,8 @@ static error_code_e op_fail(FILE *f, struct interpreter_state_t *state,
   char mainf[] = "main";
 
   csval_t p_val;
-  aint p;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p_val));
-  RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+  RETURN_IF_ERROR(callstack_pop_operand(&p_val));
+  aint p = csval_to_aint(p_val);
   DBG("FAIL\t%d %d", line, col);
   Bmatch_failure((void *)p, mainf, BOX(line), BOX(col));
   return ERROR_NONE;
@@ -777,61 +756,63 @@ static error_code_e op_line(FILE *f, struct interpreter_state_t *state,
 static error_code_e op_patt(FILE *f, struct interpreter_state_t *state,
                             char l) {
   csval_t p_val;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p_val));
+  RETURN_IF_ERROR(callstack_pop_operand(&p_val));
 
   switch (l) {
   case 0: { /* PATT =str */
-    aint p;
-    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
     csval_t p2_val;
-    aint p2;
-    RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &p2_val));
-    RETURN_IF_ERROR(csval_to_aint_checked(p2_val, &p2));
+    RETURN_IF_ERROR(callstack_pop_operand(&p2_val));
+    aint p = csval_to_aint(p_val);
+    aint p2 = csval_to_aint(p2_val);
 
-    DBG("PATT\t=str\t%d %d", UNBOX(p), UNBOX(p2));
+    DBG("PATT\t=str\t%lld %lld", UNBOX(p), UNBOX(p2));
     aint r = Bstring_patt((void *)p, (void *)p2);
-    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+    csval_t pushed = csval_from_aint(r);
+    RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
   case 1: { /* PATT #string */
-    aint p;
-    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
+    aint p = csval_to_aint(p_val);
     aint r = Bstring_tag_patt((void *)p);
-    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+    csval_t pushed = csval_from_aint(r);
+    RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
   case 2: { /* PATT #array */
-    aint p;
-    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
-    DBG("PATT\t#array\t%d", UNBOX(p));
+    aint p = csval_to_aint(p_val);
+    DBG("PATT\t#array\t%lld", UNBOX(p));
     aint r = Barray_tag_patt((void *)p);
-    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+    csval_t pushed = csval_from_aint(r);
+    RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
   case 3: { /* PATT #sexp */
-    aint p;
-    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
-    DBG("PATT\t#sexp\t%d", UNBOX(p));
+    aint p = csval_to_aint(p_val);
+    DBG("PATT\t#sexp\t%lld", UNBOX(p));
     aint r = Bsexp_tag_patt((void *)p);
-    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+    csval_t pushed = csval_from_aint(r);
+    RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
   case 4: { /* PATT #ref */
     aint r = (p_val.ty == CS_INTERNAL_REF) ? BOX(1) : BOX(0);
-    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+    csval_t pushed = csval_from_aint(r);
+    RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
   case 5: { /* PATT #val */
     aint r = (p_val.ty == CS_IMM) ? BOX(1) : BOX(0);
-    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+    
+    csval_t pushed = csval_from_aint(r);
+    RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
   case 6: { /* PATT #fun */
-    aint p;
-    RETURN_IF_ERROR(csval_to_aint_checked(p_val, &p));
-    DBG("PATT\t#fun\t%d", UNBOX(p));
+    aint p = csval_to_aint(p_val);
+    DBG("PATT\t#fun\t%lld", UNBOX(p));
     aint r = Bclosure_tag_patt((void *)p);
-    RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_imm(r)));
+    csval_t pushed = csval_from_aint(r);
+    RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
   default:
@@ -845,7 +826,7 @@ static error_code_e op_call_lread(FILE *f, struct interpreter_state_t *state,
   DBG("CALL\tLread");
   fprintf(stdout, " ");
   aint r = Lread();
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_from_aint(r)));
   return ERROR_NONE;
 }
 
@@ -853,11 +834,10 @@ static error_code_e op_call_lwrite(FILE *f, struct interpreter_state_t *state,
                                    char l) {
   DBG("CALL\tLwrite");
   csval_t v;
-  aint n;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &v));
-  RETURN_IF_ERROR(csval_to_aint_checked(v, &n));
+  RETURN_IF_ERROR(callstack_pop_operand(&v));
+  aint n = csval_to_aint(v);
   aint r = Lwrite(n);
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_from_aint(r)));
   return ERROR_NONE;
 }
 
@@ -865,14 +845,13 @@ static error_code_e op_call_llength(FILE *f, struct interpreter_state_t *state,
                                     char l) {
   DBG("CALL\tLlength");
   csval_t v;
-  aint p;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &v));
-  RETURN_IF_ERROR(csval_to_aint_checked(v, &p));
+  RETURN_IF_ERROR(callstack_pop_operand(&v));
+  aint p = csval_to_aint(v);
   if (UNBOXED(p)) {
-    return ERROR_NOT_BOXED;
+    return ERROR_NOT_REF;
   }
   aint r = Llength((void *)p);
-  RETURN_IF_ERROR(callstack_push_operand(state_cs(state), csval_from_aint(r)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_from_aint(r)));
   return ERROR_NONE;
 }
 
@@ -880,13 +859,11 @@ static error_code_e op_call_lstring(FILE *f, struct interpreter_state_t *state,
                                     char l) {
   DBG("CALL\tLstring");
   csval_t v;
-  aint p;
-  RETURN_IF_ERROR(callstack_pop_operand(state_cs(state), &v));
-  RETURN_IF_ERROR(csval_to_aint_checked(v, &p));
+  RETURN_IF_ERROR(callstack_pop_operand(&v));
+  aint  p = csval_to_aint(v);
   aint args[1] = {p};
   void *r = Lstring(args);
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_extern((aint)r)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r)));
   return ERROR_NONE;
 }
 
@@ -899,23 +876,20 @@ static error_code_e op_call_barray(FILE *f, struct interpreter_state_t *state,
   }
   if (size == 0) {
     void *r = Barray(NULL, BOX(0));
-    RETURN_IF_ERROR(
-        callstack_push_operand(state_cs(state), csval_extern((aint)r)));
+    RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r)));
     return ERROR_NONE;
   }
   csval_t args_ref;
-  RETURN_IF_ERROR(
-      callstack_pop_n_operands(state_cs(state), (uint32_t)size, &args_ref));
+  RETURN_IF_ERROR(callstack_pop_n_operands((uint32_t)size, &args_ref));
   aint *slot_words = NULL;
-  RETURN_IF_ERROR(csval_to_ref(state_cs(state), args_ref, &slot_words));
+  RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
   aint args[(size_t)size];
   for (uint32_t i = 0; i < (uint32_t)size; i++) {
     csval_t v = csval_from_slot_words(slot_words + (i * CSVAL_WORDS));
-    RETURN_IF_ERROR(csval_to_aint_checked(v, &args[i]));
+    args[i] = csval_to_aint(v);
   }
   void *r = Barray(args, BOX(size));
-  RETURN_IF_ERROR(
-      callstack_push_operand(state_cs(state), csval_extern((aint)r)));
+  RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r)));
   return ERROR_NONE;
 }
 

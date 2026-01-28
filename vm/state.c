@@ -30,12 +30,7 @@ interpreter_state_t *create_interpreter_state(bytefile *bf) {
   state->ip = bf->code_ptr; /* start at beginning of code */
 
   /* Create call stack */
-  state->callstack = create_callstack(bf->global_area_size);
-  if (!state->callstack) {
-    fprintf(stderr, "Failed to create call stack\n");
-    free(state);
-    return NULL;
-  }
+  cs_init(bf->global_area_size);
 
   /* Bytecode file */
   state->bf = bf;
@@ -44,9 +39,7 @@ interpreter_state_t *create_interpreter_state(bytefile *bf) {
 }
 void destroy_interpreter_state(interpreter_state_t *state) {
   if (state) {
-    if (state->callstack) {
-      destroy_callstack(state->callstack);
-    }
+    cs_shutdown();
     free(state);
   }
 }
@@ -62,8 +55,8 @@ uint32_t state_ip_off(interpreter_state_t *state) {
 struct callstack_t *state_cs(struct interpreter_state_t *state) {
   return state->callstack;
 }
-int state_read_int(interpreter_state_t *state) {
-  int value = 0;
+int32_t state_read_int(interpreter_state_t *state) {
+  int32_t value = 0;
   memcpy(&value, state->ip, sizeof(value));
   state->ip += sizeof(value);
   return value;
