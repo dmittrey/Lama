@@ -6,9 +6,9 @@
 
 #include "bytecode.h"
 #include "state.h"
-#include "vm.h"
 
 /* Virtual regs */
+char *__ip = NULL;  /* address of current instruction */
 size_t __cs_fp = 0; /* slot index of nlocals for current frame */
 size_t __cs_sp = 0; /* slot index of next free entry */
 
@@ -17,6 +17,7 @@ size_t __cs_cap = 0;
 size_t __cs_nframes = 0;
 size_t __cs_nglob = 0;
 aint *__cs_ram_layout = NULL;
+bytefile *__bf = NULL;
 
 #ifdef DEBUG
 #define DBG(...) fprintf(f, __VA_ARGS__)
@@ -101,8 +102,7 @@ static inline aint closure_capture_ref(aint clos, uint32_t idx) {
 
 static char current_h = 0;
 
-typedef error_code_e (*op_handler)(FILE *f, struct interpreter_state_t *state,
-                                   char l);
+typedef error_code_e (*op_handler)(FILE *f, char l);
 
 static const char *ops[] = {
     "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
@@ -116,8 +116,7 @@ static inline csval_t csval_from_slot_words(const aint *slot_words) {
   return (csval_t){.ty = (csval_type_e)UNBOX(type_word), .val = slot_words[1]};
 }
 
-static inline error_code_e store_by_internal_ref(struct callstack_t *stack,
-                                                 csval_t ref, csval_t value) {
+static inline error_code_e store_by_internal_ref(csval_t ref, csval_t value) {
   aint *slot_words = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(ref, &slot_words));
   slot_words[0] = BOX((aint)value.ty);
@@ -125,10 +124,9 @@ static inline error_code_e store_by_internal_ref(struct callstack_t *stack,
   return ERROR_NONE;
 }
 
-static inline error_code_e store_by_ref(struct callstack_t *stack, csval_t ref,
-                                        csval_t value) {
+static inline error_code_e store_by_ref(csval_t ref, csval_t value) {
   if (ref.ty == CS_INTERNAL_REF) {
-    return store_by_internal_ref(stack, ref, value);
+    return store_by_internal_ref(ref, value);
   }
   aint *refp = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(ref, &refp));
@@ -138,21 +136,16 @@ static inline error_code_e store_by_ref(struct callstack_t *stack, csval_t ref,
   return ERROR_NONE;
 }
 
-static error_code_e op_invalid(FILE *f, struct interpreter_state_t *state,
-                               char l) {
+static error_code_e op_invalid(FILE *f, char l) {
   failure("ERROR: invalid opcode %d-%d\n", current_h, l);
   return ERROR_NONE;
 }
 
-static error_code_e op_stop(FILE *f, struct interpreter_state_t *state,
-                            char l) {
-  return ERROR_STOP;
-}
+static error_code_e op_stop(FILE *f, char l) { return ERROR_STOP; }
 
-static error_code_e op_binop(FILE *f, struct interpreter_state_t *state,
-                             char l) {
+static error_code_e op_binop(FILE *f, char l) {
   if (l == 0 || l > (char)(sizeof(ops) / sizeof(ops[0]))) {
-    return op_invalid(f, state, l);
+    return op_invalid(f, l);
   }
 
   const char *op_name = ops[l - 1];
@@ -207,7 +200,7 @@ static error_code_e op_binop(FILE *f, struct interpreter_state_t *state,
     result = Ls__Infix_3333((void *)a, (void *)b);
     break; /* !! */
   default:
-    return op_invalid(f, state, l);
+    return op_invalid(f, l);
   }
 
   DBG("%" PRIdAI " %s %" PRIdAI " = %" PRIdAI, UNBOX(a), op_name, UNBOX(b),
@@ -216,28 +209,25 @@ static error_code_e op_binop(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_const(FILE *f, struct interpreter_state_t *state,
-                             char l) {
-  int32_t value = state_read_int(state);
+static error_code_e op_const(FILE *f, char l) {
+  int32_t value = bc_read_int();
   DBG("CONST\t%d", value);
   RETURN_IF_ERROR(callstack_push_operand(csval_imm(value)));
   return ERROR_NONE;
 }
 
-static error_code_e op_string(FILE *f, struct interpreter_state_t *state,
-                              char l) {
-  char *str = state_read_string(state);
+static error_code_e op_string(FILE *f, char l) {
+  char *str = bc_read_string();
   DBG("STRING (%s)\n", str);
   RETURN_IF_ERROR(
       callstack_push_operand(csval_extern((aint *)Bstring((aint *)&str))));
   return ERROR_NONE;
 }
 
-static error_code_e op_sexp(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_sexp(FILE *f, char l) {
   csval_t args_ref;
-  char *tag = state_read_string(state);
-  int32_t arity = state_read_int(state);
+  char *tag = bc_read_string();
+  int32_t arity = bc_read_int();
   DBG("SEXP\t%s %d", tag, arity);
   aint th = LtagHash(tag);
   csval_t pushed_tag = csval_from_aint(th);
@@ -256,18 +246,18 @@ static error_code_e op_sexp(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_sti(FILE *f, struct interpreter_state_t *state, char l) {
+static error_code_e op_sti(FILE *f, char l) {
   csval_t val;
   csval_t ref;
   RETURN_IF_ERROR(callstack_pop_operand(&val));
   RETURN_IF_ERROR(callstack_pop_operand(&ref));
   DBG("STI");
-  RETURN_IF_ERROR(store_by_ref(state_cs(state), ref, val));
+  RETURN_IF_ERROR(store_by_ref(ref, val));
   RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
-static error_code_e op_sta(FILE *f, struct interpreter_state_t *state, char l) {
+static error_code_e op_sta(FILE *f, char l) {
   csval_t val;
   csval_t sec_op;
   RETURN_IF_ERROR(callstack_pop_operand(&val));
@@ -289,20 +279,20 @@ static error_code_e op_sta(FILE *f, struct interpreter_state_t *state, char l) {
   // case REF: ref val
   else {
     DBG("STA");
-    RETURN_IF_ERROR(store_by_ref(state_cs(state), sec_op, val));
+    RETURN_IF_ERROR(store_by_ref(sec_op, val));
   }
   RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
-static error_code_e op_jmp(FILE *f, struct interpreter_state_t *state, char l) {
-  int offset = state_read_int(state);
+static error_code_e op_jmp(FILE *f, char l) {
+  int offset = bc_read_int();
   DBG("JMP\t0x%.8x", offset);
-  RETURN_IF_ERROR(state_jmp(state, offset));
+  RETURN_IF_ERROR(ip_jmp(offset));
   return ERROR_NONE;
 }
 
-static error_code_e op_end(FILE *f, struct interpreter_state_t *state, char l) {
+static error_code_e op_end(FILE *f, char l) {
   csval_t callee_ret;
   uint32_t ret_off;
   RETURN_IF_ERROR(callstack_pop_operand(&callee_ret));
@@ -313,11 +303,11 @@ static error_code_e op_end(FILE *f, struct interpreter_state_t *state, char l) {
   DBG("END\t%u", ret_off);
   RETURN_IF_ERROR(
       callstack_push_operand(callee_ret)); // Put retval on caller stack
-  RETURN_IF_ERROR(state_jmp(state, ret_off));
+  RETURN_IF_ERROR(ip_jmp(ret_off));
   return ERROR_NONE;
 }
 
-static error_code_e op_ret(FILE *f, struct interpreter_state_t *state, char l) {
+static error_code_e op_ret(FILE *f, char l) {
   csval_t callee_ret;
   uint32_t ret_off;
   RETURN_IF_ERROR(callstack_pop_operand(&callee_ret));
@@ -328,19 +318,18 @@ static error_code_e op_ret(FILE *f, struct interpreter_state_t *state, char l) {
   DBG("RET\t%u", ret_off);
   RETURN_IF_ERROR(
       callstack_push_operand(callee_ret)); // Put retval on caller stack
-  RETURN_IF_ERROR(state_jmp(state, ret_off));
+  RETURN_IF_ERROR(ip_jmp(ret_off));
   return ERROR_NONE;
 }
 
-static error_code_e op_drop(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_drop(FILE *f, char l) {
   csval_t val;
   DBG("DROP");
   RETURN_IF_ERROR(callstack_pop_operand(&val));
   return ERROR_NONE;
 }
 
-static error_code_e op_dup(FILE *f, struct interpreter_state_t *state, char l) {
+static error_code_e op_dup(FILE *f, char l) {
   csval_t value;
   RETURN_IF_ERROR(callstack_pop_operand(&value));
   DBG("DUP");
@@ -349,8 +338,7 @@ static error_code_e op_dup(FILE *f, struct interpreter_state_t *state, char l) {
   return ERROR_NONE;
 }
 
-static error_code_e op_swap(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_swap(FILE *f, char l) {
   csval_t a;
   csval_t b;
   RETURN_IF_ERROR(callstack_pop_operand(&a));
@@ -361,8 +349,7 @@ static error_code_e op_swap(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_elem(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_elem(FILE *f, char l) {
   csval_t idx;
   csval_t agg;
   aint idx_val;
@@ -378,39 +365,35 @@ static error_code_e op_elem(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_ld_g(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_ld_g(FILE *f, char l) {
   csval_t val;
-  int index = state_read_int(state);
+  int index = bc_read_int();
   DBG("LD\tG(%d)", index);
   RETURN_IF_ERROR(callstack_get_glob(index, &val));
   RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
-static error_code_e op_ld_l(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_ld_l(FILE *f, char l) {
   csval_t val;
-  int index = state_read_int(state);
+  int index = bc_read_int();
   DBG("LD\tL(%d)", index);
   RETURN_IF_ERROR(callstack_get_local(index, &val));
   RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
-static error_code_e op_ld_a(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_ld_a(FILE *f, char l) {
   csval_t val;
-  int index = state_read_int(state);
+  int index = bc_read_int();
   DBG("LD\tA(%d)", index);
   RETURN_IF_ERROR(callstack_get_arg(index, &val));
   RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
 
-static error_code_e op_ld_c(FILE *f, struct interpreter_state_t *state,
-                            char l) {
-  int32_t index = state_read_int(state);
+static error_code_e op_ld_c(FILE *f, char l) {
+  int32_t index = bc_read_int();
   aint clos = cs_clos();
   if (UNBOXED(clos) && UNBOX(clos) == 0) {
     DBG("LD\tC(%d): no closure in current frame\n", index);
@@ -425,9 +408,8 @@ static error_code_e op_ld_c(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_lda_g(FILE *f, struct interpreter_state_t *state,
-                             char l) {
-  int32_t index = state_read_int(state);
+static error_code_e op_lda_g(FILE *f, char l) {
+  int32_t index = bc_read_int();
   DBG("LDA\tG(%d)", index);
   csval_t ref;
   RETURN_IF_ERROR(callstack_get_glob_addr(index, &ref));
@@ -435,9 +417,8 @@ static error_code_e op_lda_g(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_lda_l(FILE *f, struct interpreter_state_t *state,
-                             char l) {
-  int32_t index = state_read_int(state);
+static error_code_e op_lda_l(FILE *f, char l) {
+  int32_t index = bc_read_int();
   DBG("LDA\tL(%d)", index);
   csval_t ref;
   RETURN_IF_ERROR(callstack_get_local_addr(index, &ref));
@@ -445,9 +426,8 @@ static error_code_e op_lda_l(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_lda_a(FILE *f, struct interpreter_state_t *state,
-                             char l) {
-  int32_t index = state_read_int(state);
+static error_code_e op_lda_a(FILE *f, char l) {
+  int32_t index = bc_read_int();
   DBG("LDA\tA(%d)", index);
   csval_t ref;
   RETURN_IF_ERROR(callstack_get_arg_addr(index, &ref));
@@ -455,9 +435,8 @@ static error_code_e op_lda_a(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_lda_c(FILE *f, struct interpreter_state_t *state,
-                             char l) {
-  int32_t index = state_read_int(state);
+static error_code_e op_lda_c(FILE *f, char l) {
+  int32_t index = bc_read_int();
   aint clos = cs_clos();
   if (UNBOXED(clos) && UNBOX(clos) == 0) {
     DBG("LDA\tC(%d): no closure in current frame\n", index);
@@ -471,10 +450,9 @@ static error_code_e op_lda_c(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_st_g(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_st_g(FILE *f, char l) {
   csval_t val;
-  int index = state_read_int(state);
+  int index = bc_read_int();
   DBG("ST\tG(%d)", index);
   RETURN_IF_ERROR(callstack_pop_operand(&val));
   RETURN_IF_ERROR(callstack_set_glob(index, val));
@@ -482,10 +460,9 @@ static error_code_e op_st_g(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_st_l(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_st_l(FILE *f, char l) {
   csval_t val;
-  int index = state_read_int(state);
+  int index = bc_read_int();
   DBG("ST\tL(%d)", index);
   RETURN_IF_ERROR(callstack_pop_operand(&val));
   RETURN_IF_ERROR(callstack_set_local(index, val));
@@ -493,10 +470,9 @@ static error_code_e op_st_l(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_st_a(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_st_a(FILE *f, char l) {
   csval_t val;
-  int index = state_read_int(state);
+  int index = bc_read_int();
   DBG("ST\tA(%d)", index);
   RETURN_IF_ERROR(callstack_pop_operand(&val));
   RETURN_IF_ERROR(callstack_set_arg(index, val));
@@ -504,9 +480,8 @@ static error_code_e op_st_a(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_st_c(FILE *f, struct interpreter_state_t *state,
-                            char l) {
-  int32_t index = state_read_int(state);
+static error_code_e op_st_c(FILE *f, char l) {
+  int32_t index = bc_read_int();
   csval_t val;
   RETURN_IF_ERROR(callstack_pop_operand(&val));
   aint a;
@@ -528,47 +503,43 @@ static error_code_e op_st_c(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_cjmpz(FILE *f, struct interpreter_state_t *state,
-                             char l) {
+static error_code_e op_cjmpz(FILE *f, char l) {
   csval_t val;
   aint cond;
-  int32_t l_offset = state_read_int(state);
+  int32_t l_offset = bc_read_int();
   DBG("CJMPz\t0x%.8x", l_offset);
   RETURN_IF_ERROR(callstack_pop_operand(&val));
   RETURN_IF_ERROR(csval_to_imm_aint(val, &cond));
 
   if (!UNBOX(cond))
-    RETURN_IF_ERROR(state_jmp(state, l_offset));
+    RETURN_IF_ERROR(ip_jmp(l_offset));
   return ERROR_NONE;
 }
 
-static error_code_e op_cjmpnz(FILE *f, struct interpreter_state_t *state,
-                              char l) {
+static error_code_e op_cjmpnz(FILE *f, char l) {
   csval_t val;
   aint cond;
-  int32_t l_offset = state_read_int(state);
+  int32_t l_offset = bc_read_int();
   DBG("CJMPnz\t0x%.8x", l_offset);
   RETURN_IF_ERROR(callstack_pop_operand(&val));
   RETURN_IF_ERROR(csval_to_imm_aint(val, &cond));
 
   if (UNBOX(cond))
-    RETURN_IF_ERROR(state_jmp(state, l_offset));
+    RETURN_IF_ERROR(ip_jmp(l_offset));
   return ERROR_NONE;
 }
 
-static error_code_e op_begin(FILE *f, struct interpreter_state_t *state,
-                             char l) {
-  int nargs = state_read_int(state);
-  int nlocals = state_read_int(state);
+static error_code_e op_begin(FILE *f, char l) {
+  int nargs = bc_read_int();
+  int nlocals = bc_read_int();
   DBG("BEGIN\t%d %d", nargs, nlocals);
   RETURN_IF_ERROR(cs_alloc_locals(nlocals));
   return ERROR_NONE;
 }
 
-static error_code_e op_cbegin(FILE *f, struct interpreter_state_t *state,
-                              char l) {
-  int nargs = state_read_int(state);
-  int nlocals = state_read_int(state);
+static error_code_e op_cbegin(FILE *f, char l) {
+  int nargs = bc_read_int();
+  int nlocals = bc_read_int();
   if (__cs_nframes == 0)
     RETURN_IF_ERROR(cs_push_frame(0, (uint32_t)nargs));
   if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
@@ -581,21 +552,20 @@ static error_code_e op_cbegin(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
-                               char l) {
-  int32_t l_offset = state_read_int(state);
+static error_code_e op_closure(FILE *f, char l) {
+  int32_t l_offset = bc_read_int();
   DBG("CLOSURE\t0x%.8x", l_offset);
 
-  int n = state_read_int(state);
+  int n = bc_read_int();
 
   // args[0] = entry pointer, args[1..n] = captured refs
   aint *args = alloca(sizeof(aint) * (n + 1));
-  args[0] = (aint)(state_base_ip(state) + l_offset);
+  args[0] = (aint)(ip_base() + l_offset);
 
   for (int i = 0; i < n; i++) {
-    switch (state_read_byte(state)) {
+    switch (bc_read_byte()) {
     case 0: { // G(m)
-      uint32_t index = state_read_int(state);
+      uint32_t index = bc_read_int();
       DBG(" G(%d)", index);
       /* Capture argument by stable heap cell (value at closure creation
        * time). */
@@ -608,7 +578,7 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
     } break;
 
     case 1: { // L(m)
-      uint32_t index = state_read_int(state);
+      uint32_t index = bc_read_int();
       DBG(" L(%d)", index);
       /* Capture local by stable heap cell (value at closure creation
        * time). */
@@ -621,7 +591,7 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
     } break;
 
     case 2: { // A(m)
-      uint32_t index = (uint32_t)state_read_int(state);
+      uint32_t index = (uint32_t)bc_read_int();
       DBG(" A(%d)", index);
       /* Capture argument by stable heap cell (value at closure creation
        * time). */
@@ -634,7 +604,7 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
     } break;
 
     case 3: { // C(m)
-      uint32_t index = (uint32_t)state_read_int(state);
+      uint32_t index = (uint32_t)bc_read_int();
       DBG(" C(%d)", index);
 
       aint clos = cs_clos();
@@ -658,10 +628,9 @@ static error_code_e op_closure(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_callc(FILE *f, struct interpreter_state_t *state,
-                             char l) {
-  uint32_t n = (uint32_t)state_read_int(state);
-  uint32_t ret_off = state_ip_off(state);
+static error_code_e op_callc(FILE *f, char l) {
+  uint32_t n = (uint32_t)bc_read_int();
+  uint32_t ret_off = ip_offset();
 
   // stack: ... [closure][arg0]...[arg(n-1)] (top = arg(n-1))
   csval_t *tmp = alloca(sizeof(csval_t) * (size_t)n);
@@ -682,24 +651,22 @@ static error_code_e op_callc(FILE *f, struct interpreter_state_t *state,
 
   DBG("CALLC\t%d", n);
   RETURN_IF_ERROR(cs_push_cframe(clos, ret_off, (uint32_t)n));
-  RETURN_IF_ERROR(
-      state_jmp(state, (int32_t)((char *)entry - state_base_ip(state))));
+  RETURN_IF_ERROR(ip_jmp((int32_t)((char *)entry - ip_base())));
   return ERROR_NONE;
 }
 
-static error_code_e op_call(FILE *f, struct interpreter_state_t *state,
-                            char l) {
-  int offset = state_read_int(state);
-  int nargs = state_read_int(state);
+static error_code_e op_call(FILE *f, char l) {
+  int offset = bc_read_int();
+  int nargs = bc_read_int();
   DBG("CALL\t0x%.8x %d", offset, nargs);
-  RETURN_IF_ERROR(cs_push_frame(state_ip_off(state), (uint32_t)nargs));
-  RETURN_IF_ERROR(state_jmp(state, offset));
+  RETURN_IF_ERROR(cs_push_frame(ip_offset(), (uint32_t)nargs));
+  RETURN_IF_ERROR(ip_jmp(offset));
   return ERROR_NONE;
 }
 
-static error_code_e op_tag(FILE *f, struct interpreter_state_t *state, char l) {
-  char *tag = state_read_string(state);
-  int arity = state_read_int(state);
+static error_code_e op_tag(FILE *f, char l) {
+  char *tag = bc_read_string();
+  int arity = bc_read_int();
 
   csval_t p_val;
   RETURN_IF_ERROR(callstack_pop_operand(&p_val));
@@ -720,9 +687,8 @@ static error_code_e op_tag(FILE *f, struct interpreter_state_t *state, char l) {
   return ERROR_NONE;
 }
 
-static error_code_e op_array(FILE *f, struct interpreter_state_t *state,
-                             char l) {
-  int size = state_read_int(state);
+static error_code_e op_array(FILE *f, char l) {
+  int size = bc_read_int();
   csval_t p_val;
   RETURN_IF_ERROR(callstack_pop_operand(&p_val));
   aint p = csval_to_aint(p_val);
@@ -732,10 +698,9 @@ static error_code_e op_array(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_fail(FILE *f, struct interpreter_state_t *state,
-                            char l) {
-  int line = state_read_int(state);
-  int col = state_read_int(state);
+static error_code_e op_fail(FILE *f, char l) {
+  int line = bc_read_int();
+  int col = bc_read_int();
   char mainf[] = "main";
 
   csval_t p_val;
@@ -746,15 +711,13 @@ static error_code_e op_fail(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_line(FILE *f, struct interpreter_state_t *state,
-                            char l) {
-  int line = state_read_int(state);
+static error_code_e op_line(FILE *f, char l) {
+  int line = bc_read_int();
   DBG("LINE\t%d", line);
   return ERROR_NONE;
 }
 
-static error_code_e op_patt(FILE *f, struct interpreter_state_t *state,
-                            char l) {
+static error_code_e op_patt(FILE *f, char l) {
   csval_t p_val;
   RETURN_IF_ERROR(callstack_pop_operand(&p_val));
 
@@ -816,13 +779,12 @@ static error_code_e op_patt(FILE *f, struct interpreter_state_t *state,
   } break;
 
   default:
-    return op_invalid(f, state, l);
+    return op_invalid(f, l);
   }
   return ERROR_NONE;
 }
 
-static error_code_e op_call_lread(FILE *f, struct interpreter_state_t *state,
-                                  char l) {
+static error_code_e op_call_lread(FILE *f, char l) {
   DBG("CALL\tLread");
   fprintf(stdout, " ");
   aint r = Lread();
@@ -830,8 +792,7 @@ static error_code_e op_call_lread(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_call_lwrite(FILE *f, struct interpreter_state_t *state,
-                                   char l) {
+static error_code_e op_call_lwrite(FILE *f, char l) {
   DBG("CALL\tLwrite");
   csval_t v;
   RETURN_IF_ERROR(callstack_pop_operand(&v));
@@ -841,8 +802,7 @@ static error_code_e op_call_lwrite(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_call_llength(FILE *f, struct interpreter_state_t *state,
-                                    char l) {
+static error_code_e op_call_llength(FILE *f, char l) {
   DBG("CALL\tLlength");
   csval_t v;
   RETURN_IF_ERROR(callstack_pop_operand(&v));
@@ -855,8 +815,7 @@ static error_code_e op_call_llength(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_call_lstring(FILE *f, struct interpreter_state_t *state,
-                                    char l) {
+static error_code_e op_call_lstring(FILE *f, char l) {
   DBG("CALL\tLstring");
   csval_t v;
   RETURN_IF_ERROR(callstack_pop_operand(&v));
@@ -867,9 +826,8 @@ static error_code_e op_call_lstring(FILE *f, struct interpreter_state_t *state,
   return ERROR_NONE;
 }
 
-static error_code_e op_call_barray(FILE *f, struct interpreter_state_t *state,
-                                   char l) {
-  int size = state_read_int(state);
+static error_code_e op_call_barray(FILE *f, char l) {
+  int size = bc_read_int();
   DBG("CALL\tBarray\t%d", size);
   if (size < 0) {
     return ERROR_STACK_UNDERFLOW;
@@ -957,22 +915,53 @@ static void init_handlers(op_handler handlers[16][16]) {
   handlers[7][4] = &op_call_barray;
 }
 
-void interpret_bc(FILE *f, struct interpreter_state_t *state,
-                  error_code_e *error_code) {
-  char *base_ip = state_ip(state);
+void interpret_bc(FILE *f, error_code_e *error_code) {
+  char *base_ip = __ip;
   static op_handler handlers[16][16];
   init_handlers(handlers);
 
   for (;;) {
-    char x = (char)state_read_byte(state);
+    char x = bc_read_byte();
     char h = (x & 0xF0) >> 4;
     char l = x & 0x0F;
 
-    DBG("0x%.8lx:\t", state_ip(state) - base_ip - 1);
+    DBG("0x%.8lx:\t", __ip - base_ip - 1);
     current_h = h;
-    if ((*error_code = handlers[h][l](f, state, l)) != ERROR_NONE) {
+    if ((*error_code = handlers[h][l](f, l)) != ERROR_NONE) {
       break;
     }
     DBG("\n");
   }
+}
+
+int main(int argc, char *argv[]) {
+  if (argc < 2) {
+    fprintf(stderr, "Usage: %s <bytecode_file>\n", argv[0]);
+    return 1;
+  }
+
+  /* Load bytecode */
+  __bf = parse_bc_file(argv[1]);
+  if (!__bf) {
+    return 1;
+  }
+
+  /* Virtual regs */
+  __ip = __bf->code_ptr;
+
+  /* Create call stack */
+  cs_init(__bf->global_area_size);
+
+  /* Interpret bytecode */
+  error_code_e error_code = ERROR_NONE;
+  interpret_bc(stdout, &error_code);
+  if (error_code != ERROR_NONE && error_code != ERROR_STOP) {
+    fprintf(stderr, "Error: %d\n", error_code);
+    return 1;
+  }
+
+  /* Cleanup */
+  free(__bf);
+
+  return 0;
 }
