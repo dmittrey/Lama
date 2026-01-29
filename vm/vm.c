@@ -47,12 +47,6 @@ extern aint Lwrite(aint n);
 extern aint Llength(void *p);
 extern void *Lstring(aint *args);
 
-// Prevent dangling closure elem
-static inline aint *alloc_capture_cell(aint v) {
-  aint args[1] = {v};
-  return (aint *)Barray(args, BOX(1));
-}
-
 static inline void *closure_entry_ptr(aint clos) {
   if (UNBOXED(clos)) {
     failure("CALLC/LD C: closure expected, got unboxed\n");
@@ -84,6 +78,23 @@ static inline aint closure_capture_ref(aint clos, uint32_t idx) {
   }
 
   return ((aint *)d->contents)[idx + 1];
+}
+
+static inline aint *closure_capture_slot_addr(aint clos, uint32_t idx) {
+  if (UNBOXED(clos)) {
+    failure("closure_capture_slot_addr: closure expected, got unboxed\n");
+  }
+  data *d = TO_DATA((void *)clos);
+  if (TAG(d->data_header) != CLOSURE_TAG) {
+    failure("closure_capture_slot_addr: closure expected, tag=%ld\n",
+            TAG(d->data_header));
+  }
+  aint len = LEN(d->data_header);
+  if ((aint)(idx + 1) >= len) {
+    failure("closure_capture_slot_addr: index %u out of range (len=%ld)\n", idx,
+            len);
+  }
+  return ((aint *)d->contents) + (idx + 1);
 }
 
 static char current_h = 0;
@@ -404,10 +415,8 @@ static error_code_e op_ld_c(FILE *f, char l) {
   }
 
   DBG("LD\tC(%d)", index);
-  aint ref = closure_capture_ref(clos, (uint32_t)index);
-  aint *cell = NULL;
-  RETURN_IF_ERROR(csval_to_ref_aintp(csval_extern((aint *)ref), &cell));
-  RETURN_IF_ERROR(callstack_push_operand(csval_from_aint(*cell)));
+  aint val = closure_capture_ref(clos, (uint32_t)index);
+  RETURN_IF_ERROR(callstack_push_operand(csval_from_aint(val)));
   return ERROR_NONE;
 }
 
@@ -447,9 +456,8 @@ static error_code_e op_lda_c(FILE *f, char l) {
   }
 
   DBG("LDA\tC(%d)", index);
-  aint ref = closure_capture_ref(clos, (uint32_t)index);
-  RETURN_IF_ERROR(
-      callstack_push_operand(csval_extern((aint *)ref))); // direct ref
+  aint *slot_addr = closure_capture_slot_addr(clos, (uint32_t)index);
+  RETURN_IF_ERROR(callstack_push_operand(csval_extern(slot_addr)));
   return ERROR_NONE;
 }
 
@@ -497,11 +505,8 @@ static error_code_e op_st_c(FILE *f, char l) {
   }
 
   DBG("ST\tC(%d)", index);
-  aint ref = closure_capture_ref(clos, (uint32_t)index);
-  aint *cell = NULL;
-  RETURN_IF_ERROR(csval_to_ref_aintp(csval_extern((aint *)ref), &cell));
-  *cell = a;
-
+  aint *slot_addr = closure_capture_slot_addr(clos, (uint32_t)index);
+  *slot_addr = a;
   RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
@@ -560,74 +565,59 @@ static error_code_e op_closure(FILE *f, char l) {
   DBG("CLOSURE\t0x%.8x", l_offset);
 
   int n = bc_read_int();
+  if (n < 0) {
+    return ERROR_INVALID_CAPTURE_TYPE;
+  }
 
-  // args[0] = entry pointer, args[1..n] = captured refs
-  aint *args = alloca(sizeof(aint) * (n + 1));
-  args[0] = (aint)(ip_base() + l_offset);
+  data *r = (data *)alloc_closure((uint32_t)n + 1);
+  push_extra_root((void **)&r);
+
+  ((void **)r->contents)[0] = (void *)(ip_base() + l_offset);
 
   for (int i = 0; i < n; i++) {
     switch (bc_read_byte()) {
     case 0: { // G(m)
       uint32_t index = bc_read_int();
       DBG(" G(%d)", index);
-      /* Capture argument by stable heap cell (value at closure creation
-       * time). */
       csval_t v_val;
-      aint v;
       RETURN_IF_ERROR(callstack_get_glob(index, &v_val));
-      v = csval_to_aint(v_val);
-      aint *cell = alloc_capture_cell(v);
-      args[i + 1] = (aint)cell;
+      ((aint *)r->contents)[i + 1] = csval_to_aint(v_val);
     } break;
 
     case 1: { // L(m)
       uint32_t index = bc_read_int();
       DBG(" L(%d)", index);
-      /* Capture local by stable heap cell (value at closure creation
-       * time). */
       csval_t v_val;
-      aint v;
       RETURN_IF_ERROR(callstack_get_local(index, &v_val));
-      v = csval_to_aint(v_val);
-      aint *cell = alloc_capture_cell(v);
-      args[i + 1] = (aint)cell; /* direct-address ref */
+      ((aint *)r->contents)[i + 1] = csval_to_aint(v_val);
     } break;
 
     case 2: { // A(m)
       uint32_t index = (uint32_t)bc_read_int();
       DBG(" A(%d)", index);
-      /* Capture argument by stable heap cell (value at closure creation
-       * time). */
       csval_t v_val;
-      aint v;
       RETURN_IF_ERROR(callstack_get_arg(index, &v_val));
-      v = csval_to_aint(v_val);
-      aint *cell = alloc_capture_cell(v);
-      args[i + 1] = (aint)cell; /* direct-address ref */
+      ((aint *)r->contents)[i + 1] = csval_to_aint(v_val);
     } break;
 
     case 3: { // C(m)
       uint32_t index = (uint32_t)bc_read_int();
       DBG(" C(%d)", index);
-
       aint clos = cs_clos();
       if (UNBOXED(clos) && UNBOX(clos) == 0) {
         failure("CLOSURE: capture C(%u) but no closure in current frame\n",
                 index);
       }
-
-      // берём ref на captured cell из текущего closure
-      args[i + 1] = closure_capture_ref(clos, index);
+      ((aint *)r->contents)[i + 1] = closure_capture_ref(clos, index);
     } break;
 
     default:
-      // DBG("CLOSURE: invalid capture type %d\n", kind);
       return ERROR_INVALID_CAPTURE_TYPE;
     }
   }
 
-  aint clos_obj = (aint)Bclosure(args, BOX(n));
-  RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)clos_obj)));
+  pop_extra_root((void **)&r);
+  RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r->contents)));
   return ERROR_NONE;
 }
 
