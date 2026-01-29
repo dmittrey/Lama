@@ -183,11 +183,11 @@ static inline aint *closure_capture_slot_addr(aint clos, uint32_t idx) {
 
 static char current_h = 0;
 
-static const char *ops[] = {
+static const char *const ops[] = {
     "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-static const char *pats[] = {"=str", "#string", "#array", "#sexp",
-                             "#ref", "#val",    "#fun"};
-static const char *lds[] = {"LD", "LDA", "ST"};
+static const char *const pats[] = {"=str", "#string", "#array", "#sexp",
+                                   "#ref", "#val",    "#fun"};
+static const char *const lds[] = {"LD", "LDA", "ST"};
 
 static inline csval_t csval_from_slot_words(const aint *slot_words) {
   aint type_word = slot_words[0];
