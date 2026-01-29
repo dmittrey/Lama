@@ -844,15 +844,23 @@ static error_code_e op_call_barray(FILE *f, char l) {
   RETURN_IF_ERROR(callstack_pop_n_operands((uint32_t)size, &args_ref));
   aint *slot_words = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
-  aint args[(size_t)size];
+
+  for (uint32_t i = 0; i < (uint32_t)size; i++) {
+    push_extra_root((void **)&slot_words[i * CSVAL_WORDS + 1]);
+  }
+
+  data *r = (data *)alloc_array((uint32_t)size);
   for (uint32_t i = 0; i < (uint32_t)size; i++) {
     csval_t v = csval_from_slot_words(slot_words + (i * CSVAL_WORDS));
-    args[i] = csval_to_aint(v);
+    ((aint *)r->contents)[i] = csval_to_aint(v);
   }
-  void *r = Barray(args, BOX(size));
 
-  __gc_sync(); // Shrink bottom n operands popped before
-  RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r)));
+  for (int32_t i = (int32_t)size - 1; i >= 0; i--) {
+    pop_extra_root((void **)&slot_words[i * CSVAL_WORDS + 1]);
+  }
+
+  __gc_sync(); /* Shrink bottom after popped operands */
+  RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r->contents)));
   return ERROR_NONE;
 }
 
