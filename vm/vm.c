@@ -217,7 +217,7 @@ static error_code_e op_const(FILE *f, char l) {
 }
 
 static error_code_e op_string(FILE *f, char l) {
-  char *str = bc_read_string();
+  const char *str = bc_read_string();
   DBG("STRING (%s)\n", str);
   RETURN_IF_ERROR(
       callstack_push_operand(csval_extern((aint *)Bstring((aint *)&str))));
@@ -226,10 +226,10 @@ static error_code_e op_string(FILE *f, char l) {
 
 static error_code_e op_sexp(FILE *f, char l) {
   csval_t args_ref;
-  char *tag = bc_read_string();
+  const char *tag = bc_read_string();
   int32_t arity = bc_read_int();
   DBG("SEXP\t%s %d", tag, arity);
-  aint th = LtagHash(tag);
+  aint th = LtagHash((char *)tag);
   csval_t pushed_tag = csval_from_aint(th);
   RETURN_IF_ERROR(callstack_push_operand(pushed_tag));
   RETURN_IF_ERROR(callstack_pop_n_operands(arity + 1, &args_ref));
@@ -665,13 +665,13 @@ static error_code_e op_call(FILE *f, char l) {
 }
 
 static error_code_e op_tag(FILE *f, char l) {
-  char *tag = bc_read_string();
+  const char *tag = bc_read_string();
   int arity = bc_read_int();
 
   csval_t p_val;
   RETURN_IF_ERROR(callstack_pop_operand(&p_val));
   aint p = csval_to_aint(p_val);
-  aint th = LtagHash(tag);
+  aint th = LtagHash((char *)tag);
   aint an = BOX(arity);
   DBG("TAG\t%s %d", tag, arity);
 

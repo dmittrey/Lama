@@ -16,7 +16,7 @@ static inline int header_size(const bytefile *const f) {
 }
 
 /* Gets a string from a string table by an index */
-char *get_string(const bytefile *const f, int pos) {
+const char *get_string(const bytefile *const f, int pos) {
   if (pos < 0 || pos >= f->stringtab_size) {
     fprintf(stderr,
             "bytecode: invalid string table index: %d (table_size=%d)\n", pos,
@@ -27,7 +27,7 @@ char *get_string(const bytefile *const f, int pos) {
 }
 
 /* Gets a name for a public symbol */
-char *get_public_name(const bytefile *const f, int i) {
+const char *get_public_name(const bytefile *const f, int i) {
   if (i < 0 || i >= f->public_symbols_number) {
     fprintf(stderr, "bytecode: invalid public symbol index: %d (number=%d)\n",
             i, f->public_symbols_number);
