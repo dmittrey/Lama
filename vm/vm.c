@@ -7,80 +7,89 @@
 #include "bytecode.h"
 #include "state.h"
 
-/* High Opcode */
-#define OP_H_BINOP 0
-#define OP_H_OP1 1
-#define OP_H_LD 2
-#define OP_H_LDA 3
-#define OP_H_ST 4
-#define OP_H_OP5 5
-#define OP_H_PATT 6
-#define OP_H_BUILTIN 7
-#define OP_H_STOP 15
+/* High nibble (h) */
+enum op_high {
+  OP_H_BINOP = 0,
+  OP_H_OP1 = 1,
+  OP_H_LD = 2,
+  OP_H_LDA = 3,
+  OP_H_ST = 4,
+  OP_H_OP5 = 5,
+  OP_H_PATT = 6,
+  OP_H_BUILTIN = 7,
+  OP_H_STOP = 15
+};
 
-/* Low Opcode for OP_H_BINOP (h=0) */
-#define OP_L_BINOP_ADD 1
-#define OP_L_BINOP_SUB 2
-#define OP_L_BINOP_MUL 3
-#define OP_L_BINOP_DIV 4
-#define OP_L_BINOP_MOD 5
-#define OP_L_BINOP_LT 6
-#define OP_L_BINOP_LE 7
-#define OP_L_BINOP_GT 8
-#define OP_L_BINOP_GE 9
-#define OP_L_BINOP_EQ 10
-#define OP_L_BINOP_NE 11
-#define OP_L_BINOP_AND 12
-#define OP_L_BINOP_OR 13
+/* Low nibble for OP_H_BINOP (h=0) */
+enum op_l_binop {
+  OP_L_BINOP_ADD = 1,
+  OP_L_BINOP_SUB = 2,
+  OP_L_BINOP_MUL = 3,
+  OP_L_BINOP_DIV = 4,
+  OP_L_BINOP_MOD = 5,
+  OP_L_BINOP_LT = 6,
+  OP_L_BINOP_LE = 7,
+  OP_L_BINOP_GT = 8,
+  OP_L_BINOP_GE = 9,
+  OP_L_BINOP_EQ = 10,
+  OP_L_BINOP_NE = 11,
+  OP_L_BINOP_AND = 12,
+  OP_L_BINOP_OR = 13
+};
 
-/* Low Opcode for OP_H_OP1 (h=1) */
-#define OP_L_CONST 0
-#define OP_L_STRING 1
-#define OP_L_SEXP 2
-#define OP_L_STI 3
-#define OP_L_STA 4
-#define OP_L_JMP 5
-#define OP_L_END 6
-#define OP_L_RET 7
-#define OP_L_DROP 8
-#define OP_L_DUP 9
-#define OP_L_SWAP 10
-#define OP_L_ELEM 11
+/* Low nibble for OP_H_OP1 (h=1) */
+enum op_l_op1 {
+  OP_L_CONST = 0,
+  OP_L_STRING = 1,
+  OP_L_SEXP = 2,
+  OP_L_STI = 3,
+  OP_L_STA = 4,
+  OP_L_JMP = 5,
+  OP_L_END = 6,
+  OP_L_RET = 7,
+  OP_L_DROP = 8,
+  OP_L_DUP = 9,
+  OP_L_SWAP = 10,
+  OP_L_ELEM = 11
+};
 
-/* Low Opcode for LD/LDA/ST (h=2,3,4) */
-#define OP_L_G 0
-#define OP_L_L 1
-#define OP_L_A 2
-#define OP_L_C 3
+/* Low nibble for LD/LDA/ST (h=2,3,4) */
+enum op_l_ld_st { OP_L_G = 0, OP_L_L = 1, OP_L_A = 2, OP_L_C = 3 };
 
-/* Low Opcode for OP_H_OP5 (h=5) */
-#define OP_L_CJMPz 0
-#define OP_L_CJMPnz 1
-#define OP_L_BEGIN 2
-#define OP_L_CBEGIN 3
-#define OP_L_CLOSURE 4
-#define OP_L_CALLC 5
-#define OP_L_CALL 6
-#define OP_L_TAG 7
-#define OP_L_ARRAY 8
-#define OP_L_FAIL 9
-#define OP_L_LINE 10
+/* Low nibble for OP_H_OP5 (h=5) */
+enum op_l_op5 {
+  OP_L_CJMPz = 0,
+  OP_L_CJMPnz = 1,
+  OP_L_BEGIN = 2,
+  OP_L_CBEGIN = 3,
+  OP_L_CLOSURE = 4,
+  OP_L_CALLC = 5,
+  OP_L_CALL = 6,
+  OP_L_TAG = 7,
+  OP_L_ARRAY = 8,
+  OP_L_FAIL = 9,
+  OP_L_LINE = 10
+};
 
-/* Low Opcode for OP_H_BUILTIN (h=7) */
-#define OP_L_LREAD 0
-#define OP_L_LWRITE 1
-#define OP_L_LLENGTH 2
-#define OP_L_LSTRING 3
-#define OP_L_BARRAY 4
+/* Low nibble for OP_H_BUILTIN (h=7) */
+enum op_l_builtin {
+  OP_L_LREAD = 0,
+  OP_L_LWRITE = 1,
+  OP_L_LLENGTH = 2,
+  OP_L_LSTRING = 3,
+  OP_L_BARRAY = 4
+};
 
-/* Low Opcode for OP_H_PATT (h=6) */
-#define OP_L_PATT_STR 0        /* =str */
-#define OP_L_PATT_STRING_TAG 1 /* #string */
-#define OP_L_PATT_ARRAY_TAG 2  /* #array */
-#define OP_L_PATT_SEXP_TAG 3   /* #sexp */
-#define OP_L_PATT_REF 4        /* #ref */
-#define OP_L_PATT_VAL 5        /* #val */
-#define OP_L_PATT_FUN 6        /* #fun */
+/* Low nibble for OP_H_PATT (h=6) */
+enum op_l_patt {
+  OP_L_PATT_STR = 0,        /* =str */
+  OP_L_PATT_STRING_TAG = 1, /* #string */
+  OP_L_PATT_ARRAY_TAG = 2,  /* #array */
+  OP_L_PATT_SEXP_TAG = 3,   /* #sexp */
+  OP_L_PATT_REF = 4,        /* #ref */
+  OP_L_PATT_VAL = 5,        /* #val */
+  OP_L_PATT_FUN = 6         /* #fun */
+};
 
 /* Virtual regs */
 char *__ip = NULL;  /* address of current instruction */
