@@ -398,7 +398,6 @@ static error_code_e callstack_pop_n_operands(uint32_t n, csval_t *ret) {
     return ERROR_STACK_UNDERFLOW;
   }
   __cs_sp -= n;
-  __gc_sync();
 
   *ret = csval_intern(first_off);
   return ERROR_NONE;

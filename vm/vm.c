@@ -224,19 +224,28 @@ static error_code_e op_sexp(FILE *f, char l) {
   int32_t arity = bc_read_int();
   DBG("SEXP\t%s %d", tag, arity);
   aint th = LtagHash((char *)tag);
-  csval_t pushed_tag = csval_from_aint(th);
-  RETURN_IF_ERROR(callstack_push_operand(pushed_tag));
-  RETURN_IF_ERROR(callstack_pop_n_operands(arity + 1, &args_ref));
+  RETURN_IF_ERROR(callstack_pop_n_operands((uint32_t)arity, &args_ref));
   aint *slot_words = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
-  uint32_t nargs = (uint32_t)(arity + 1);
-  aint args[nargs];
-  for (uint32_t i = 0; i < nargs; i++) {
-    csval_t v = csval_from_slot_words(slot_words + (i * CSVAL_WORDS));
-    args[i] = csval_to_aint(v);
+
+  for (uint32_t i = 0; i < (uint32_t)arity; i++) {
+    push_extra_root((void **)&slot_words[i * CSVAL_WORDS + 1]);
   }
-  void *r = Bsexp(args, BOX(nargs /* With tag*/));
-  RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r)));
+
+  sexp *r = alloc_sexp(arity);
+  for (uint32_t i = 0; i < (uint32_t)arity; i++) {
+    csval_t v = csval_from_slot_words(slot_words + (i * CSVAL_WORDS));
+    ((auint *)r->contents)[i] = csval_to_aint(v);
+  }
+  r->tag = UNBOX(th);
+
+  for (int32_t i = (int32_t)arity - 1; i >= 0; i--) {
+    pop_extra_root((void **)&slot_words[i * CSVAL_WORDS + 1]);
+  }
+
+  __gc_sync(); // Shrink bottom n operands popped before
+  RETURN_IF_ERROR(
+      callstack_push_operand(csval_extern((aint *)((data *)r)->contents)));
   return ERROR_NONE;
 }
 
@@ -841,6 +850,8 @@ static error_code_e op_call_barray(FILE *f, char l) {
     args[i] = csval_to_aint(v);
   }
   void *r = Barray(args, BOX(size));
+
+  __gc_sync(); // Shrink bottom n operands popped before
   RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r)));
   return ERROR_NONE;
 }
