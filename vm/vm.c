@@ -25,20 +25,6 @@ bytefile *__bf = NULL;
 #define DBG(...) ((void)0)
 #endif
 
-extern aint Ls__Infix_3333(void *p, void *q); /* !! */
-extern aint Ls__Infix_3361(void *p, void *q); /* != */
-extern aint Ls__Infix_3838(void *p, void *q); /* && */
-extern aint Ls__Infix_37(void *p, void *q);   /* %  */
-extern aint Ls__Infix_42(void *p, void *q);   /* *  */
-extern aint Ls__Infix_43(void *p, void *q);   /* +  */
-extern aint Ls__Infix_45(void *p, void *q);   /* -  */
-extern aint Ls__Infix_47(void *p, void *q);   /* /  */
-extern aint Ls__Infix_60(void *p, void *q);   /* <  */
-extern aint Ls__Infix_6061(void *p, void *q); /* <= */
-extern aint Ls__Infix_6161(void *p, void *q); /* == */
-extern aint Ls__Infix_62(void *p, void *q);   /* >  */
-extern aint Ls__Infix_6261(void *p, void *q); /* >= */
-
 extern void *Bstring(aint *args);
 extern aint LtagHash(char *);
 extern void *Bsexp(aint *args, aint bn);
@@ -152,56 +138,64 @@ static error_code_e op_binop(FILE *f, char l) {
   DBG("BINOP\t%s", op_name);
 
   csval_t a_val, b_val;
-  aint a, b;
   RETURN_IF_ERROR(callstack_pop_operand(&b_val));
-  b = csval_to_aint(b_val);
   RETURN_IF_ERROR(callstack_pop_operand(&a_val));
-  a = csval_to_aint(a_val);
-  aint result = 0;
+  aint a = UNBOX(csval_to_aint(a_val));
+  aint b = UNBOX(csval_to_aint(b_val));
+  aint result_unbox = 0;
 
   switch (l) {
   case 1:
-    result = Ls__Infix_43((void *)a, (void *)b);
+    result_unbox = a + b;
     break; /* + */
   case 2:
-    result = Ls__Infix_45((void *)a, (void *)b);
+    result_unbox = a - b;
     break; /* - */
   case 3:
-    result = Ls__Infix_42((void *)a, (void *)b);
+    result_unbox = a * b;
     break; /* * */
   case 4:
-    result = Ls__Infix_47((void *)a, (void *)b);
+    if (b == 0) {
+      failure("integer division by zero at ip=0x%.8lx\n",
+              (unsigned long)ip_offset());
+    }
+    result_unbox = a / b;
     break; /* / */
   case 5:
-    result = Ls__Infix_37((void *)a, (void *)b);
+    if (b == 0) {
+      failure("integer modulo by zero at ip=0x%.8lx\n",
+              (unsigned long)ip_offset());
+    }
+    result_unbox = a % b;
     break; /* % */
   case 6:
-    result = Ls__Infix_60((void *)a, (void *)b);
+    result_unbox = a < b;
     break; /* < */
   case 7:
-    result = Ls__Infix_6061((void *)a, (void *)b);
+    result_unbox = a <= b;
     break; /* <= */
   case 8:
-    result = Ls__Infix_62((void *)a, (void *)b);
+    result_unbox = a > b;
     break; /* > */
   case 9:
-    result = Ls__Infix_6261((void *)a, (void *)b);
+    result_unbox = a >= b;
     break; /* >= */
   case 10:
-    result = Ls__Infix_6161((void *)a, (void *)b);
+    result_unbox = a == b;
     break; /* == */
   case 11:
-    result = Ls__Infix_3361((void *)a, (void *)b);
+    result_unbox = a != b;
     break; /* != */
   case 12:
-    result = Ls__Infix_3838((void *)a, (void *)b);
+    result_unbox = a && b;
     break; /* && */
   case 13:
-    result = Ls__Infix_3333((void *)a, (void *)b);
+    result_unbox = a || b;
     break; /* !! */
   default:
     return op_invalid(f, l);
   }
+  aint result = BOX(result_unbox);
 
   DBG("%" PRIdAI " %s %" PRIdAI " = %" PRIdAI, UNBOX(a), op_name, UNBOX(b),
       UNBOX(result));
