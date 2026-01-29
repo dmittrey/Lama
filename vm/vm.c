@@ -321,20 +321,12 @@ static error_code_e op_sexp(FILE *f, char l) {
   aint *slot_words = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
 
-  for (uint32_t i = 0; i < (uint32_t)arity; i++) {
-    push_extra_root((void **)&slot_words[i * CSVAL_WORDS + 1]);
-  }
-
   sexp *r = alloc_sexp(arity);
   for (uint32_t i = 0; i < (uint32_t)arity; i++) {
     csval_t v = csval_from_slot_words(slot_words + (i * CSVAL_WORDS));
     ((auint *)r->contents)[i] = csval_to_aint(v);
   }
   r->tag = UNBOX(th);
-
-  for (int32_t i = (int32_t)arity - 1; i >= 0; i--) {
-    pop_extra_root((void **)&slot_words[i * CSVAL_WORDS + 1]);
-  }
 
   __gc_sync(); // Shrink bottom n operands popped before
   RETURN_IF_ERROR(
@@ -917,18 +909,10 @@ static error_code_e op_call_barray(FILE *f, char l) {
   aint *slot_words = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
 
-  for (uint32_t i = 0; i < (uint32_t)size; i++) {
-    push_extra_root((void **)&slot_words[i * CSVAL_WORDS + 1]);
-  }
-
   data *r = (data *)alloc_array((uint32_t)size);
   for (uint32_t i = 0; i < (uint32_t)size; i++) {
     csval_t v = csval_from_slot_words(slot_words + (i * CSVAL_WORDS));
     ((aint *)r->contents)[i] = csval_to_aint(v);
-  }
-
-  for (int32_t i = (int32_t)size - 1; i >= 0; i--) {
-    pop_extra_root((void **)&slot_words[i * CSVAL_WORDS + 1]);
   }
 
   __gc_sync(); /* Shrink bottom after popped operands */
