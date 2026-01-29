@@ -7,6 +7,81 @@
 #include "bytecode.h"
 #include "state.h"
 
+/* High Opcode */
+#define OP_H_BINOP 0
+#define OP_H_OP1 1
+#define OP_H_LD 2
+#define OP_H_LDA 3
+#define OP_H_ST 4
+#define OP_H_OP5 5
+#define OP_H_PATT 6
+#define OP_H_BUILTIN 7
+#define OP_H_STOP 15
+
+/* Low Opcode for OP_H_BINOP (h=0) */
+#define OP_L_BINOP_ADD 1
+#define OP_L_BINOP_SUB 2
+#define OP_L_BINOP_MUL 3
+#define OP_L_BINOP_DIV 4
+#define OP_L_BINOP_MOD 5
+#define OP_L_BINOP_LT 6
+#define OP_L_BINOP_LE 7
+#define OP_L_BINOP_GT 8
+#define OP_L_BINOP_GE 9
+#define OP_L_BINOP_EQ 10
+#define OP_L_BINOP_NE 11
+#define OP_L_BINOP_AND 12
+#define OP_L_BINOP_OR 13
+
+/* Low Opcode for OP_H_OP1 (h=1) */
+#define OP_L_CONST 0
+#define OP_L_STRING 1
+#define OP_L_SEXP 2
+#define OP_L_STI 3
+#define OP_L_STA 4
+#define OP_L_JMP 5
+#define OP_L_END 6
+#define OP_L_RET 7
+#define OP_L_DROP 8
+#define OP_L_DUP 9
+#define OP_L_SWAP 10
+#define OP_L_ELEM 11
+
+/* Low Opcode for LD/LDA/ST (h=2,3,4) */
+#define OP_L_G 0
+#define OP_L_L 1
+#define OP_L_A 2
+#define OP_L_C 3
+
+/* Low Opcode for OP_H_OP5 (h=5) */
+#define OP_L_CJMPz 0
+#define OP_L_CJMPnz 1
+#define OP_L_BEGIN 2
+#define OP_L_CBEGIN 3
+#define OP_L_CLOSURE 4
+#define OP_L_CALLC 5
+#define OP_L_CALL 6
+#define OP_L_TAG 7
+#define OP_L_ARRAY 8
+#define OP_L_FAIL 9
+#define OP_L_LINE 10
+
+/* Low Opcode for OP_H_BUILTIN (h=7) */
+#define OP_L_LREAD 0
+#define OP_L_LWRITE 1
+#define OP_L_LLENGTH 2
+#define OP_L_LSTRING 3
+#define OP_L_BARRAY 4
+
+/* Low Opcode for OP_H_PATT (h=6) */
+#define OP_L_PATT_STR 0        /* =str */
+#define OP_L_PATT_STRING_TAG 1 /* #string */
+#define OP_L_PATT_ARRAY_TAG 2  /* #array */
+#define OP_L_PATT_SEXP_TAG 3   /* #sexp */
+#define OP_L_PATT_REF 4        /* #ref */
+#define OP_L_PATT_VAL 5        /* #val */
+#define OP_L_PATT_FUN 6        /* #fun */
+
 /* Virtual regs */
 char *__ip = NULL;  /* address of current instruction */
 size_t __cs_fp = 0; /* slot index of nlocals for current frame */
@@ -99,8 +174,6 @@ static inline aint *closure_capture_slot_addr(aint clos, uint32_t idx) {
 
 static char current_h = 0;
 
-typedef error_code_e (*op_handler)(FILE *f, char l);
-
 static const char *ops[] = {
     "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
 static const char *pats[] = {"=str", "#string", "#array", "#sexp",
@@ -141,7 +214,7 @@ static error_code_e op_invalid(FILE *f, char l) {
 static error_code_e op_stop(FILE *f, char l) { return ERROR_STOP; }
 
 static error_code_e op_binop(FILE *f, char l) {
-  if (l == 0 || l > (char)(sizeof(ops) / sizeof(ops[0]))) {
+  if (l < OP_L_BINOP_ADD || l > OP_L_BINOP_OR) {
     return op_invalid(f, l);
   }
 
@@ -156,53 +229,53 @@ static error_code_e op_binop(FILE *f, char l) {
   aint result_unbox = 0;
 
   switch (l) {
-  case 1:
+  case OP_L_BINOP_ADD:
     result_unbox = a + b;
-    break; /* + */
-  case 2:
+    break;
+  case OP_L_BINOP_SUB:
     result_unbox = a - b;
-    break; /* - */
-  case 3:
+    break;
+  case OP_L_BINOP_MUL:
     result_unbox = a * b;
-    break; /* * */
-  case 4:
+    break;
+  case OP_L_BINOP_DIV:
     if (b == 0) {
       failure("integer division by zero at ip=0x%.8lx\n",
               (unsigned long)ip_offset());
     }
     result_unbox = a / b;
-    break; /* / */
-  case 5:
+    break;
+  case OP_L_BINOP_MOD:
     if (b == 0) {
       failure("integer modulo by zero at ip=0x%.8lx\n",
               (unsigned long)ip_offset());
     }
     result_unbox = a % b;
-    break; /* % */
-  case 6:
+    break;
+  case OP_L_BINOP_LT:
     result_unbox = a < b;
-    break; /* < */
-  case 7:
+    break;
+  case OP_L_BINOP_LE:
     result_unbox = a <= b;
-    break; /* <= */
-  case 8:
+    break;
+  case OP_L_BINOP_GT:
     result_unbox = a > b;
-    break; /* > */
-  case 9:
+    break;
+  case OP_L_BINOP_GE:
     result_unbox = a >= b;
-    break; /* >= */
-  case 10:
+    break;
+  case OP_L_BINOP_EQ:
     result_unbox = a == b;
-    break; /* == */
-  case 11:
+    break;
+  case OP_L_BINOP_NE:
     result_unbox = a != b;
-    break; /* != */
-  case 12:
+    break;
+  case OP_L_BINOP_AND:
     result_unbox = a && b;
-    break; /* && */
-  case 13:
+    break;
+  case OP_L_BINOP_OR:
     result_unbox = a || b;
-    break; /* !! */
+    break;
   default:
     return op_invalid(f, l);
   }
@@ -576,7 +649,7 @@ static error_code_e op_closure(FILE *f, char l) {
 
   for (int i = 0; i < n; i++) {
     switch (bc_read_byte()) {
-    case 0: { // G(m)
+    case OP_L_G: {
       uint32_t index = bc_read_int();
       DBG(" G(%d)", index);
       csval_t v_val;
@@ -584,7 +657,7 @@ static error_code_e op_closure(FILE *f, char l) {
       ((aint *)r->contents)[i + 1] = csval_to_aint(v_val);
     } break;
 
-    case 1: { // L(m)
+    case OP_L_L: {
       uint32_t index = bc_read_int();
       DBG(" L(%d)", index);
       csval_t v_val;
@@ -592,7 +665,7 @@ static error_code_e op_closure(FILE *f, char l) {
       ((aint *)r->contents)[i + 1] = csval_to_aint(v_val);
     } break;
 
-    case 2: { // A(m)
+    case OP_L_A: {
       uint32_t index = (uint32_t)bc_read_int();
       DBG(" A(%d)", index);
       csval_t v_val;
@@ -600,7 +673,7 @@ static error_code_e op_closure(FILE *f, char l) {
       ((aint *)r->contents)[i + 1] = csval_to_aint(v_val);
     } break;
 
-    case 3: { // C(m)
+    case OP_L_C: {
       uint32_t index = (uint32_t)bc_read_int();
       DBG(" C(%d)", index);
       aint clos = cs_clos();
@@ -715,7 +788,7 @@ static error_code_e op_patt(FILE *f, char l) {
   RETURN_IF_ERROR(callstack_pop_operand(&p_val));
 
   switch (l) {
-  case 0: { /* PATT =str */
+  case OP_L_PATT_STR: {
     csval_t p2_val;
     RETURN_IF_ERROR(callstack_pop_operand(&p2_val));
     aint p = csval_to_aint(p_val);
@@ -727,14 +800,14 @@ static error_code_e op_patt(FILE *f, char l) {
     RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
-  case 1: { /* PATT #string */
+  case OP_L_PATT_STRING_TAG: {
     aint p = csval_to_aint(p_val);
     aint r = Bstring_tag_patt((void *)p);
     csval_t pushed = csval_from_aint(r);
     RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
-  case 2: { /* PATT #array */
+  case OP_L_PATT_ARRAY_TAG: {
     aint p = csval_to_aint(p_val);
     DBG("PATT\t#array\t%lld", UNBOX(p));
     aint r = Barray_tag_patt((void *)p);
@@ -742,7 +815,7 @@ static error_code_e op_patt(FILE *f, char l) {
     RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
-  case 3: { /* PATT #sexp */
+  case OP_L_PATT_SEXP_TAG: {
     aint p = csval_to_aint(p_val);
     DBG("PATT\t#sexp\t%lld", UNBOX(p));
     aint r = Bsexp_tag_patt((void *)p);
@@ -750,20 +823,20 @@ static error_code_e op_patt(FILE *f, char l) {
     RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
-  case 4: { /* PATT #ref */
+  case OP_L_PATT_REF: {
     aint r = (p_val.ty == CS_INTERNAL_REF) ? BOX(1) : BOX(0);
     csval_t pushed = csval_from_aint(r);
     RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
-  case 5: { /* PATT #val */
+  case OP_L_PATT_VAL: {
     aint r = (p_val.ty == CS_IMM) ? BOX(1) : BOX(0);
 
     csval_t pushed = csval_from_aint(r);
     RETURN_IF_ERROR(callstack_push_operand(pushed));
   } break;
 
-  case 6: { /* PATT #fun */
+  case OP_L_PATT_FUN: {
     aint p = csval_to_aint(p_val);
     DBG("PATT\t#fun\t%lld", UNBOX(p));
     aint r = Bclosure_tag_patt((void *)p);
@@ -854,74 +927,8 @@ static error_code_e op_call_barray(FILE *f, char l) {
   return ERROR_NONE;
 }
 
-static void init_handlers(op_handler handlers[16][16]) {
-  for (int i = 0; i < 16; i++) {
-    for (int j = 0; j < 16; j++) {
-      handlers[i][j] = op_invalid;
-    }
-  }
-
-  for (int j = 0; j < 16; j++) {
-    handlers[15][j] = op_stop;
-  }
-
-  for (int j = 0; j < (int)(sizeof(ops) / sizeof(ops[0])); j++) {
-    handlers[0][j] = &op_binop;
-  }
-
-  handlers[1][0] = &op_const;
-  handlers[1][1] = &op_string;
-  handlers[1][2] = &op_sexp;
-  handlers[1][3] = &op_sti;
-  handlers[1][4] = &op_sta;
-  handlers[1][5] = &op_jmp;
-  handlers[1][6] = &op_end;
-  handlers[1][7] = &op_ret;
-  handlers[1][8] = &op_drop;
-  handlers[1][9] = &op_dup;
-  handlers[1][10] = &op_swap;
-  handlers[1][11] = &op_elem;
-
-  handlers[2][0] = &op_ld_g;
-  handlers[2][1] = &op_ld_l;
-  handlers[2][2] = &op_ld_a;
-  handlers[2][3] = &op_ld_c;
-  handlers[3][0] = &op_lda_g;
-  handlers[3][1] = &op_lda_l;
-  handlers[3][2] = &op_lda_a;
-  handlers[3][3] = &op_lda_c;
-  handlers[4][0] = &op_st_g;
-  handlers[4][1] = &op_st_l;
-  handlers[4][2] = &op_st_a;
-  handlers[4][3] = &op_st_c;
-
-  handlers[5][0] = &op_cjmpz;
-  handlers[5][1] = &op_cjmpnz;
-  handlers[5][2] = &op_begin;
-  handlers[5][3] = &op_cbegin;
-  handlers[5][4] = &op_closure;
-  handlers[5][5] = &op_callc;
-  handlers[5][6] = &op_call;
-  handlers[5][7] = &op_tag;
-  handlers[5][8] = &op_array;
-  handlers[5][9] = &op_fail;
-  handlers[5][10] = &op_line;
-
-  for (int j = 0; j < 16; j++) {
-    handlers[6][j] = &op_patt;
-  }
-
-  handlers[7][0] = &op_call_lread;
-  handlers[7][1] = &op_call_lwrite;
-  handlers[7][2] = &op_call_llength;
-  handlers[7][3] = &op_call_lstring;
-  handlers[7][4] = &op_call_barray;
-}
-
 void interpret_bc(FILE *f, error_code_e *error_code) {
   char *base_ip = __ip;
-  static op_handler handlers[16][16];
-  init_handlers(handlers);
 
   for (;;) {
     char x = bc_read_byte();
@@ -930,11 +937,169 @@ void interpret_bc(FILE *f, error_code_e *error_code) {
 
     DBG("0x%.8lx:\t", __ip - base_ip - 1);
     current_h = h;
-    if ((*error_code = handlers[h][l](f, l)) != ERROR_NONE) {
+
+    switch (h) {
+    case OP_H_STOP:
+      *error_code = ERROR_STOP;
+      goto done;
+
+    case OP_H_BINOP:
+      *error_code = op_binop(f, l);
+      break;
+
+    case OP_H_OP1:
+      switch (l) {
+      case OP_L_CONST:
+        *error_code = op_const(f, l);
+        break;
+      case OP_L_STRING:
+        *error_code = op_string(f, l);
+        break;
+      case OP_L_SEXP:
+        *error_code = op_sexp(f, l);
+        break;
+      case OP_L_STI:
+        *error_code = op_sti(f, l);
+        break;
+      case OP_L_STA:
+        *error_code = op_sta(f, l);
+        break;
+      case OP_L_JMP:
+        *error_code = op_jmp(f, l);
+        break;
+      case OP_L_END:
+        *error_code = op_end(f, l);
+        break;
+      case OP_L_RET:
+        *error_code = op_ret(f, l);
+        break;
+      case OP_L_DROP:
+        *error_code = op_drop(f, l);
+        break;
+      case OP_L_DUP:
+        *error_code = op_dup(f, l);
+        break;
+      case OP_L_SWAP:
+        *error_code = op_swap(f, l);
+        break;
+      case OP_L_ELEM:
+        *error_code = op_elem(f, l);
+        break;
+      default:
+        *error_code = op_invalid(f, l);
+        break;
+      }
+      break;
+
+    case OP_H_LD:
+    case OP_H_LDA:
+    case OP_H_ST:
+      switch (l) {
+      case OP_L_G:
+        *error_code = h == OP_H_LD    ? op_ld_g(f, l)
+                      : h == OP_H_LDA ? op_lda_g(f, l)
+                                      : op_st_g(f, l);
+        break;
+      case OP_L_L:
+        *error_code = h == OP_H_LD    ? op_ld_l(f, l)
+                      : h == OP_H_LDA ? op_lda_l(f, l)
+                                      : op_st_l(f, l);
+        break;
+      case OP_L_A:
+        *error_code = h == OP_H_LD    ? op_ld_a(f, l)
+                      : h == OP_H_LDA ? op_lda_a(f, l)
+                                      : op_st_a(f, l);
+        break;
+      case OP_L_C:
+        *error_code = h == OP_H_LD    ? op_ld_c(f, l)
+                      : h == OP_H_LDA ? op_lda_c(f, l)
+                                      : op_st_c(f, l);
+        break;
+      default:
+        *error_code = op_invalid(f, l);
+        break;
+      }
+      break;
+
+    case OP_H_OP5:
+      switch (l) {
+      case OP_L_CJMPz:
+        *error_code = op_cjmpz(f, l);
+        break;
+      case OP_L_CJMPnz:
+        *error_code = op_cjmpnz(f, l);
+        break;
+      case OP_L_BEGIN:
+        *error_code = op_begin(f, l);
+        break;
+      case OP_L_CBEGIN:
+        *error_code = op_cbegin(f, l);
+        break;
+      case OP_L_CLOSURE:
+        *error_code = op_closure(f, l);
+        break;
+      case OP_L_CALLC:
+        *error_code = op_callc(f, l);
+        break;
+      case OP_L_CALL:
+        *error_code = op_call(f, l);
+        break;
+      case OP_L_TAG:
+        *error_code = op_tag(f, l);
+        break;
+      case OP_L_ARRAY:
+        *error_code = op_array(f, l);
+        break;
+      case OP_L_FAIL:
+        *error_code = op_fail(f, l);
+        break;
+      case OP_L_LINE:
+        *error_code = op_line(f, l);
+        break;
+      default:
+        *error_code = op_invalid(f, l);
+        break;
+      }
+      break;
+
+    case OP_H_PATT:
+      *error_code = op_patt(f, l);
+      break;
+
+    case OP_H_BUILTIN:
+      switch (l) {
+      case OP_L_LREAD:
+        *error_code = op_call_lread(f, l);
+        break;
+      case OP_L_LWRITE:
+        *error_code = op_call_lwrite(f, l);
+        break;
+      case OP_L_LLENGTH:
+        *error_code = op_call_llength(f, l);
+        break;
+      case OP_L_LSTRING:
+        *error_code = op_call_lstring(f, l);
+        break;
+      case OP_L_BARRAY:
+        *error_code = op_call_barray(f, l);
+        break;
+      default:
+        *error_code = op_invalid(f, l);
+        break;
+      }
+      break;
+
+    default:
+      *error_code = op_invalid(f, l);
       break;
     }
+
+    if (*error_code != ERROR_NONE)
+      break;
     DBG("\n");
   }
+done:
+  DBG("<done>\n");
 }
 
 int main(int argc, char *argv[]) {
