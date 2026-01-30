@@ -152,6 +152,8 @@ static inline error_code_e __cs_pop_slot(csval_t *ret) {
     return ERROR_OPND_STACK_UNDERFLOW;
   }
   __cs_sp_sub(1);
+  if (!ret)
+    return ERROR_NONE; // To not stubbing ret container
   *ret = __cs_slot_read(__cs_sp_slots());
   return ERROR_NONE;
 }
@@ -208,6 +210,30 @@ static inline size_t __cs_operands_base_idx() {
 }
 
 /* PUBLIC */
+/* Frame operations */
+static error_code_e cs_push_cframe(aint closure, uint32_t ret_off,
+                                   uint32_t nargs) {
+  if (!((UNBOXED(closure) && UNBOX(closure) == 0) || !UNBOXED(closure)))
+    return ERROR_NOT_VALID_CLOSURE;
+
+  /* Closure segment */
+  RETURN_IF_ERROR(__cs_push_slot(csval_from_aint(closure)));
+
+  /* Return address segment */
+  RETURN_IF_ERROR(__cs_push_slot(csval_imm(ret_off)));
+
+  /* Args segment */
+  RETURN_IF_ERROR(__cs_push_slot(csval_imm(nargs)));
+
+  /* Prolog */
+  RETURN_IF_ERROR(__cs_push_slot(csval_imm(__cs_fp)));
+  __cs_fp = __cs_sp_slots();
+  __cs_nframes++;
+  return ERROR_NONE;
+}
+static error_code_e cs_push_frame(uint32_t ret_off, uint32_t nargs) {
+  return cs_push_cframe(BOX(0), ret_off, nargs);
+}
 /* Lifecycle */
 static error_code_e cs_init(int nglobals) {
   __gc_init();
@@ -230,51 +256,16 @@ static error_code_e cs_init(int nglobals) {
   __cs_nframes = 0;
   __cs_nglob = nglobals;
 
+  /* Initial frame */
+  RETURN_IF_ERROR(cs_push_frame(0, 2));
+
   return ERROR_NONE;
 }
 static error_code_e cs_shutdown(void) {
   free((void *)__gc_stack_top);
   return ERROR_NONE;
 }
-
-/* Frame operations */
-static error_code_e cs_push_cframe(aint closure, uint32_t ret_off,
-                                   uint32_t nargs) {
-  if (!((UNBOXED(closure) && UNBOX(closure) == 0) || !UNBOXED(closure)))
-    return ERROR_NOT_VALID_CLOSURE;
-
-  if (nargs > 0) {
-    uint32_t noperands_ = __cs_noperands();
-    if (nargs > noperands_) {
-      return ERROR_OPND_STACK_UNDERFLOW;
-    }
-    /* Detach args from operand stack without moving slots. */
-    RETURN_IF_ERROR(
-        __cs_write_imm(__cs_noperands_base_idx(), noperands_ - nargs));
-  }
-
-  /* Closure segment */
-  RETURN_IF_ERROR(__cs_push_slot(csval_from_aint(closure)));
-
-  /* Return address segment */
-  RETURN_IF_ERROR(__cs_push_slot(csval_imm(ret_off)));
-
-  /* Args segment */
-  RETURN_IF_ERROR(__cs_push_slot(csval_imm(nargs)));
-
-  /* Prolog */
-  RETURN_IF_ERROR(__cs_push_slot(csval_imm(__cs_fp)));
-  __cs_fp = __cs_sp_slots();
-  __cs_nframes++;
-  return ERROR_NONE;
-}
-static error_code_e cs_push_frame(uint32_t ret_off, uint32_t nargs) {
-  return cs_push_cframe(BOX(0), ret_off, nargs);
-}
 static error_code_e cs_alloc_locals(uint32_t nlocals) {
-  if (!__cs_nframes)
-    RETURN_IF_ERROR(cs_push_frame(0, 0));
-
   /* Locals segment */
   RETURN_IF_ERROR(__cs_push_slot(csval_imm(nlocals)));
   __cs_sp_add(nlocals); /* reserve space in frame for nlocals */
@@ -313,10 +304,6 @@ static error_code_e cs_pop_frame(uint32_t *ret_off) {
   csval_t closure_val;
   RETURN_IF_ERROR(__cs_pop_slot(&closure_val));
 
-  if (__cs_sp_slots() < (size_t)UNBOX(nargs_aint)) {
-    return ERROR_STACK_UNDERFLOW;
-  }
-  __cs_sp_sub((size_t)UNBOX(nargs_aint));
   return ERROR_NONE;
 }
 
@@ -389,13 +376,10 @@ static error_code_e callstack_push_operand(csval_t value) {
   RETURN_IF_ERROR(__cs_write_imm(__cs_noperands_base_idx(), noperands_ + 1));
   return ERROR_NONE;
 }
-static error_code_e callstack_peek_n_operands(uint32_t n, csval_t *ret) {
+static error_code_e callstack_pop_n_operands(uint32_t n) {
   uint32_t noperands_ = __cs_noperands();
   if (noperands_ < n)
     return ERROR_OPND_STACK_UNDERFLOW;
-
-  size_t base = __cs_operands_base_idx();
-  size_t first_off = base + (noperands_ - n /* tail start */);
 
   // Update noperands
   RETURN_IF_ERROR(__cs_write_imm(__cs_noperands_base_idx(), noperands_ - n));
@@ -403,8 +387,15 @@ static error_code_e callstack_peek_n_operands(uint32_t n, csval_t *ret) {
     return ERROR_STACK_UNDERFLOW;
   }
 
-  *ret = csval_intern(first_off);
+  __cs_sp_sub(n);
+
   return ERROR_NONE;
+}
+static csval_t callstack_operands_tail_ref(uint32_t n) {
+  size_t base = __cs_operands_base_idx();
+  size_t slot = base + (__cs_noperands() - n /* tail start */);
+
+  return csval_intern(slot);
 }
 
 /* Reference */

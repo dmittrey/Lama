@@ -309,12 +309,11 @@ static error_code_e op_string(FILE *f, char l) {
 }
 
 static error_code_e op_sexp(FILE *f, char l) {
-  csval_t args_ref;
   const char *tag = bc_read_string();
   int32_t arity = bc_read_int();
   DBG("SEXP\t%s %d", tag, arity);
   aint th = LtagHash((char *)tag);
-  RETURN_IF_ERROR(callstack_peek_n_operands((uint32_t)arity, &args_ref));
+  csval_t args_ref = callstack_operands_tail_ref((uint32_t)arity);
   aint *slot_words = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
 
@@ -325,7 +324,8 @@ static error_code_e op_sexp(FILE *f, char l) {
   }
   r->tag = UNBOX(th);
 
-  __cs_sp_sub((uint32_t)arity); // Shrink bottom n operands popped before
+  RETURN_IF_ERROR(callstack_pop_n_operands(
+      (uint32_t)arity)); // Shrink bottom n operands used before
   RETURN_IF_ERROR(
       callstack_push_operand(csval_extern((aint *)((data *)r)->contents)));
   return ERROR_NONE;
@@ -380,27 +380,15 @@ static error_code_e op_jmp(FILE *f, char l) {
 static error_code_e op_end(FILE *f, char l) {
   csval_t callee_ret;
   uint32_t ret_off;
+  size_t nargs = cs_nargs();
   RETURN_IF_ERROR(callstack_pop_operand(&callee_ret));
   RETURN_IF_ERROR(cs_pop_frame(&ret_off));
   if (__cs_nframes == 0) {
     return ERROR_STOP;
   }
   DBG("END\t%u", ret_off);
-  RETURN_IF_ERROR(
-      callstack_push_operand(callee_ret)); // Put retval on caller stack
-  RETURN_IF_ERROR(ip_jmp(ret_off));
-  return ERROR_NONE;
-}
-
-static error_code_e op_ret(FILE *f, char l) {
-  csval_t callee_ret;
-  uint32_t ret_off;
-  RETURN_IF_ERROR(callstack_pop_operand(&callee_ret));
-  RETURN_IF_ERROR(cs_pop_frame(&ret_off));
-  if (__cs_nframes == 0) {
-    return ERROR_STOP;
-  }
-  DBG("RET\t%u", ret_off);
+  for (size_t i = 0; i < nargs; i++)
+    RETURN_IF_ERROR(callstack_pop_operand(NULL));
   RETURN_IF_ERROR(
       callstack_push_operand(callee_ret)); // Put retval on caller stack
   RETURN_IF_ERROR(ip_jmp(ret_off));
@@ -611,6 +599,10 @@ static error_code_e op_cjmpnz(FILE *f, char l) {
 static error_code_e op_begin(FILE *f, char l) {
   int nargs = bc_read_int();
   int nlocals = bc_read_int();
+  if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
+    failure("BEGIN:\t nargs mismatch: exp: %d act: %d\n", cs_nargs(), nargs);
+    return ERROR_NARGS_MISMATCH;
+  }
   DBG("BEGIN\t%d %d", nargs, nlocals);
   RETURN_IF_ERROR(cs_alloc_locals(nlocals));
   return ERROR_NONE;
@@ -619,13 +611,10 @@ static error_code_e op_begin(FILE *f, char l) {
 static error_code_e op_cbegin(FILE *f, char l) {
   int nargs = bc_read_int();
   int nlocals = bc_read_int();
-  if (__cs_nframes == 0)
-    RETURN_IF_ERROR(cs_push_frame(0, (uint32_t)nargs));
   if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
-    DBG("CBEGIN\t%d\t%d: nargs mismatch\n", nargs, nlocals);
+    failure("CBEGIN:\t nargs mismatch: exp: %d act: %d\n", cs_nargs(), nargs);
     return ERROR_NARGS_MISMATCH;
   }
-
   DBG("CBEGIN\t%d\t%d", nargs, nlocals);
   RETURN_IF_ERROR(cs_alloc_locals((uint32_t)nlocals));
   return ERROR_NONE;
@@ -696,34 +685,14 @@ static error_code_e op_callc(FILE *f, char l) {
   uint32_t n = (uint32_t)bc_read_int();
   uint32_t ret_off = ip_offset();
 
-  // stack: ... [closure][arg0]...[arg(n-1)] (top = arg(n-1))
-  csval_t clos_val;
-  data *tmp = NULL;
-
-  if (n > 0) {
-    tmp = (data *)alloc_array(n * CSVAL_WORDS);
-    push_extra_root((void **)&tmp);
-    aint *slot = (aint *)tmp->contents;
-    for (int i = (int)n - 1; i >= 0; --i) {
-      csval_t v;
-      RETURN_IF_ERROR(callstack_pop_operand(&v));
-      slot[2 * i] = BOX((aint)v.ty);
-      slot[2 * i + 1] = v.val;
-    }
-  }
-
-  RETURN_IF_ERROR(callstack_pop_operand(&clos_val));
-  aint clos = csval_to_aint(clos_val);
-
-  if (n > 0) {
-    aint *slot = (aint *)tmp->contents;
-    for (uint32_t i = 0; i < n; ++i) {
-      csval_t v = (csval_t){.ty = (csval_type_e)UNBOX(slot[2 * i]),
-                            .val = slot[2 * i + 1]};
-      RETURN_IF_ERROR(callstack_push_operand(v));
-    }
-    pop_extra_root((void **)&tmp);
-  }
+  // stack: ... [closure][arg0]...[arg(n-1)]
+  csval_t clos_ref = callstack_operands_tail_ref(n + 1 /* [clos][n args] */);
+  csval_t *clos_ptr = NULL;
+  RETURN_IF_ERROR(csval_to_ref_aintp(clos_ref, (aint **)&clos_ptr));
+  aint clos = csval_to_aint(*clos_ptr);
+  if (n > 0)
+    memmove(clos_ptr, clos_ptr + 1, n * CS_SLOT_BYTES);
+  RETURN_IF_ERROR(callstack_pop_operand(NULL));
 
   void *entry = closure_entry_ptr(clos);
 
@@ -915,8 +884,7 @@ static error_code_e op_call_barray(FILE *f, char l) {
     RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r)));
     return ERROR_NONE;
   }
-  csval_t args_ref;
-  RETURN_IF_ERROR(callstack_peek_n_operands((uint32_t)size, &args_ref));
+  csval_t args_ref = callstack_operands_tail_ref((uint32_t)size);
   aint *slot_words = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
 
@@ -926,7 +894,8 @@ static error_code_e op_call_barray(FILE *f, char l) {
     ((aint *)r->contents)[i] = csval_to_aint(v);
   }
 
-  __cs_sp_sub((uint32_t)size); // Shrink bottom n operands popped before
+  RETURN_IF_ERROR(callstack_pop_n_operands(
+      (uint32_t)size)); // Shrink bottom n operands used before
   RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r->contents)));
   return ERROR_NONE;
 }
@@ -975,7 +944,7 @@ void interpret_bc(FILE *f, error_code_e *error_code) {
         *error_code = op_end(f, l);
         break;
       case OP_L_RET:
-        *error_code = op_ret(f, l);
+        *error_code = op_end(f, l);
         break;
       case OP_L_DROP:
         *error_code = op_drop(f, l);
