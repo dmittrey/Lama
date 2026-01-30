@@ -94,13 +94,10 @@ enum op_l_patt {
 /* Virtual regs */
 char *__ip = NULL;  /* address of current instruction */
 size_t __cs_fp = 0; /* slot index of nlocals for current frame */
-size_t __cs_sp = 0; /* slot index of next free entry */
-
 /* Internal */
 size_t __cs_cap = 0;
 size_t __cs_nframes = 0;
 size_t __cs_nglob = 0;
-aint *__cs_ram_layout = NULL;
 bytefile *__bf = NULL;
 
 #ifdef DEBUG
@@ -317,7 +314,7 @@ static error_code_e op_sexp(FILE *f, char l) {
   int32_t arity = bc_read_int();
   DBG("SEXP\t%s %d", tag, arity);
   aint th = LtagHash((char *)tag);
-  RETURN_IF_ERROR(callstack_pop_n_operands((uint32_t)arity, &args_ref));
+  RETURN_IF_ERROR(callstack_peek_n_operands((uint32_t)arity, &args_ref));
   aint *slot_words = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
 
@@ -328,7 +325,7 @@ static error_code_e op_sexp(FILE *f, char l) {
   }
   r->tag = UNBOX(th);
 
-  __gc_sync(); // Shrink bottom n operands popped before
+  __cs_sp_sub((uint32_t)arity); // Shrink bottom n operands popped before
   RETURN_IF_ERROR(
       callstack_push_operand(csval_extern((aint *)((data *)r)->contents)));
   return ERROR_NONE;
@@ -919,7 +916,7 @@ static error_code_e op_call_barray(FILE *f, char l) {
     return ERROR_NONE;
   }
   csval_t args_ref;
-  RETURN_IF_ERROR(callstack_pop_n_operands((uint32_t)size, &args_ref));
+  RETURN_IF_ERROR(callstack_peek_n_operands((uint32_t)size, &args_ref));
   aint *slot_words = NULL;
   RETURN_IF_ERROR(csval_to_ref_aintp(args_ref, &slot_words));
 
@@ -929,7 +926,7 @@ static error_code_e op_call_barray(FILE *f, char l) {
     ((aint *)r->contents)[i] = csval_to_aint(v);
   }
 
-  __gc_sync(); /* Shrink bottom after popped operands */
+  __cs_sp_sub((uint32_t)size); // Shrink bottom n operands popped before
   RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r->contents)));
   return ERROR_NONE;
 }
