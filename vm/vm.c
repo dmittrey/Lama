@@ -700,18 +700,32 @@ static error_code_e op_callc(FILE *f, char l) {
   uint32_t ret_off = ip_offset();
 
   // stack: ... [closure][arg0]...[arg(n-1)] (top = arg(n-1))
-  csval_t *tmp = alloca(sizeof(csval_t) * (size_t)n);
+  csval_t clos_val;
+  data *tmp = NULL;
 
-  for (int i = (int)n - 1; i >= 0; --i) {
-    RETURN_IF_ERROR(callstack_pop_operand(&tmp[i]));
+  if (n > 0) {
+    tmp = (data *)alloc_array(n * CSVAL_WORDS);
+    push_extra_root((void **)&tmp);
+    aint *slot = (aint *)tmp->contents;
+    for (int i = (int)n - 1; i >= 0; --i) {
+      csval_t v;
+      RETURN_IF_ERROR(callstack_pop_operand(&v));
+      slot[2 * i] = BOX((aint)v.ty);
+      slot[2 * i + 1] = v.val;
+    }
   }
 
-  csval_t clos_val;
   RETURN_IF_ERROR(callstack_pop_operand(&clos_val));
   aint clos = csval_to_aint(clos_val);
 
-  for (uint32_t i = 0; i < n; ++i) {
-    RETURN_IF_ERROR(callstack_push_operand(tmp[i]));
+  if (n > 0) {
+    aint *slot = (aint *)tmp->contents;
+    for (uint32_t i = 0; i < n; ++i) {
+      csval_t v = (csval_t){.ty = (csval_type_e)UNBOX(slot[2 * i]),
+                            .val = slot[2 * i + 1]};
+      RETURN_IF_ERROR(callstack_push_operand(v));
+    }
+    pop_extra_root((void **)&tmp);
   }
 
   void *entry = closure_entry_ptr(clos);
