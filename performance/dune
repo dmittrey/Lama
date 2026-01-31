@@ -1,22 +1,10 @@
-(rule
- (targets Sort.exe)
- (deps
-  (:lama Sort.lama)
-  ../runtime/runtime.a
-  ../stdlib/x64/Fun.i)
- (mode
-  (promote (until-clean)))
- (action
-  (setenv
-   LAMA
-   "../runtime"
-   (run
-    %{project_root}/src/Driver.exe
-    -64
-    %{lama}
-    -I
-    ../stdlib/x64
-    -runtime
-    ../runtime
-    -o
-    %{targets}))))
+(cram (deps ../src/Driver.exe ../runtime/Std.i))
+
+(cram (applies_to Sort)
+  (deps Sort.lama Sort.input))
+
+(cram (applies_to Sort_s)
+  (deps Sort.lama Sort.input))
+
+(cram (applies_to Sort_vm)
+  (deps Sort.lama Sort.input ../vm/vm))

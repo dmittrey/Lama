@@ -11,8 +11,8 @@
 #include "csval.h"
 #include "error.h"
 
-#define CALLSTACK_INITIAL_SIZE 64
-#define CALLSTACK_MAX_SIZE 32768
+#define CALLSTACK_INITIAL_SIZE 65536
+#define CALLSTACK_MAX_SIZE 262144
 
 #define CSVAL_WORDS 2
 #define CS_SLOT_BYTES ((size_t)(CSVAL_WORDS * sizeof(aint)))
