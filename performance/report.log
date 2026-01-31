@@ -1,0 +1,35 @@
+➜  Lama git:(1.30-bcfreq-task3) ✗ dune test performance
+clang -Wno-shift-negative-value -g -fstack-protector-all -arch x86_64 --std=c11 -I../runtime -DLAMA_ENV -o vm vm.c bytecode.c ../runtime/runtime.a
+File "performance/Sort_s.t", line 1, characters 0-0:
+diff --git a/_build/default/performance/Sort_s.t b/_build/default/performance/Sort_s.t.corrected
+index 1f697576d..86605c4a8 100644
+--- a/_build/default/performance/Sort_s.t
++++ b/_build/default/performance/Sort_s.t.corrected
+@@ -1,4 +1,4 @@
+   $ echo "=== Testing: Driver stack machine — bytecode interpretation (-s) ==="
+   === Testing: Driver stack machine — bytecode interpretation (-s) ===
+   $ start=$(perl -MTime::HiRes=time -e 'print time()'); ../src/Driver.exe -runtime ../runtime -I ../stdlib/x64 -s Sort.lama < Sort.input; end=$(perl -MTime::HiRes=time -e 'print time()'); perl -e 'printf "finished in %.3f ms\n", ($ARGV[1]-$ARGV[0])*1000' "$start" "$end"
+-  finished in 0.000 ms
++  finished in 295270.730 ms
+File "performance/Sort.t", line 1, characters 0-0:
+diff --git a/_build/default/performance/Sort.t b/_build/default/performance/Sort.t.corrected
+index e422030b5..559433741 100644
+--- a/_build/default/performance/Sort.t
++++ b/_build/default/performance/Sort.t.corrected
+@@ -1,4 +1,4 @@
+   $ echo "=== Testing: source-level interpreter (-i), AST interpretation ==="
+   === Testing: source-level interpreter (-i), AST interpretation ===
+   $ start=$(perl -MTime::HiRes=time -e 'print time()'); ../src/Driver.exe -runtime ../runtime -I ../stdlib/x64 -i Sort.lama < Sort.input; end=$(perl -MTime::HiRes=time -e 'print time()'); perl -e 'printf "finished in %.3f ms\n", ($ARGV[1]-$ARGV[0])*1000' "$start" "$end"
+-  finished in 0.000 ms
++  finished in 753908.150 ms
+File "performance/Sort_vm.t", line 1, characters 0-0:
+diff --git a/_build/default/performance/Sort_vm.t b/_build/default/performance/Sort_vm.t.corrected
+index e48caddcb..ef02e1849 100644
+--- a/_build/default/performance/Sort_vm.t
++++ b/_build/default/performance/Sort_vm.t.corrected
+@@ -2,4 +2,4 @@
+   === Testing: custom VM — bytecode from file (.bc) ===
+   $ ../src/Driver.exe -runtime ../runtime -I ../stdlib/x64 -b Sort.lama
+   $ start=$(perl -MTime::HiRes=time -e 'print time()'); ../vm/vm Sort.bc < Sort.input; end=$(perl -MTime::HiRes=time -e 'print time()'); perl -e 'printf "finished in %.3f ms\n", ($ARGV[1]-$ARGV[0])*1000' "$start" "$end"
+-  finished in 0.000 ms
++  finished in 1727814.300 ms
