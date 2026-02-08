@@ -1,7 +1,7 @@
 (rule
  (target byterun.exe)
  (deps
-  (:main byterun.c)
+  (:main byterun.c bytefile.c)
   (:runtime ../runtime/runtime.a)
   mac-specific-flags.txt)
  (mode
