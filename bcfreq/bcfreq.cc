@@ -85,7 +85,7 @@ void BytecodeFreq::find_idioms() {
         return; // Stop condition
 
     bytecode op;
-    int len_ret = disassemble_instruction(stderr, bytefile_.get(),
+    int len_ret = disassemble_instruction(stdin, bytefile_.get(),
                                           static_cast<int>(offset), &op);
     uint32_t length = static_cast<uint32_t>(len_ret);
     validate(offset + length < code_size, "Unexpected end of code",
@@ -96,14 +96,70 @@ void BytecodeFreq::find_idioms() {
     // Twos sequence (We can go to next and its not separate dot)
     if (!is_call(op) && !is_terminal(op) && reachable_.at(next_offset) &&
         !jump_targets_.at(next_offset)) {
-      bytecode next_op;
       int next_len = disassemble_instruction(
-          stdin, bytefile_.get(), static_cast<int>(next_offset), &next_op);
+          stdin, bytefile_.get(), static_cast<int>(next_offset), NULL);
       uint32_t next_length = static_cast<uint32_t>(next_len);
       validate(next_offset + next_length < code_size, "Unexpected end of code",
                next_offset + next_length);
       TwosIdioms_[offset] = 1;
     }
     offset += length;
+  }
+}
+
+void BytecodeFreq::fill_idioms() {
+  for (uint32_t offset = 0; offset < OnesIdioms_.size(); offset++) {
+    // Marked
+    if (OnesIdioms_[offset]) {
+      bytecode op;
+      int len_ret = disassemble_instruction(stdin, bytefile_.get(),
+                                            static_cast<int>(offset), &op);
+      OnesIdiomsFreq_[op]++;
+    }
+  }
+  for (uint32_t offset = 0; offset < TwosIdioms_.size(); offset++) {
+    // Marked
+    if (TwosIdioms_[offset]) {
+      bytecode op;
+      bytecode next_op;
+      int len_ret = disassemble_instruction(stdin, bytefile_.get(),
+                                            static_cast<int>(offset), &op);
+      int next_len_ret = disassemble_instruction(
+          stdin, bytefile_.get(),
+          static_cast<int>(offset + static_cast<uint32_t>(len_ret)), &next_op);
+      TwoIdiomsFreq_[std::make_pair(op, next_op)]++;
+    }
+  }
+}
+
+template <typename A, typename B>
+static std::pair<B, A> flip_pair(const std::pair<A, B> &p) {
+  return std::pair<B, A>(p.second, p.first);
+}
+
+template <typename A, typename B>
+static std::multimap<B, A> flip_map(const std::map<A, B> &src) {
+  std::multimap<B, A> dst;
+  std::transform(src.begin(), src.end(), std::inserter(dst, dst.begin()),
+                 flip_pair<A, B>);
+  return dst;
+}
+
+void BytecodeFreq::analyse() {
+  find_reachable_instructions();
+  find_idioms();
+  fill_idioms();
+  auto OnesIdiomsFreqSorted = flip_map(OnesIdiomsFreq_);
+  for (auto it = OnesIdiomsFreqSorted.rbegin();
+       it != OnesIdiomsFreqSorted.rend(); ++it) {
+    std::cout << it->first << " - " << bytecode_string_view(it->second)
+              << std::endl;
+  }
+  auto TwosIdiomsFreqSorted = flip_map(TwoIdiomsFreq_);
+  for (auto it = TwosIdiomsFreqSorted.rbegin();
+       it != TwosIdiomsFreqSorted.rend(); ++it) {
+    std::cout << it->first << " - (" << bytecode_string_view(it->second.first)
+              << ", " << bytecode_string_view(it->second.second) << ")"
+              << std::endl;
   }
 }

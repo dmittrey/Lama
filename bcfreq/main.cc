@@ -13,7 +13,5 @@ int main(int argc, char *argv[]) {
   }
 
   BytecodeFreq bcfreq(argv[1]);
-
-  bcfreq.find_reachable_instructions();
-  bcfreq.find_idioms();
+  bcfreq.analyse();
 }
