@@ -17,6 +17,11 @@ int get_public_offset(const struct bytefile *const, int pos);
 size_t get_code_size(const struct bytefile *const);
 int32_t get_arg(const struct bytefile *const, int pos);
 
+// Success 0
+// Error -1
+int get_bytes(const struct bytefile *const bf, uint32_t pos, uint32_t len,
+              const uint8_t **out_ptr);
+
 struct bytefile *read_file(char *fname);
 void destroy_file(struct bytefile *);
 void dump_file(FILE *f, const struct bytefile *const);
