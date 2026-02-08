@@ -6,13 +6,14 @@
 #include <stdlib.h>
 #include "../runtime/runtime.h"
 
-#define PUB_VAL_SIZE 2 * sizeof(uint32_t) // pos + offset
+#include "bytefile.h"
+#include "disasm.h"
 
 void *__start_custom_data;
 void *__stop_custom_data;
 
 /* The unpacked representation of bytecode file */
-typedef struct {
+typedef struct bytefile {
   char *string_ptr; /* A pointer to the beginning of the string table */
   int *public_ptr;  /* A pointer to the beginning of publics table    */
   char *code_ptr;   /* A pointer to the bytecode itself               */
@@ -23,6 +24,13 @@ typedef struct {
   int public_symbols_number; /* The number of public symbols */
   char buffer[0];
 } bytefile;
+
+#define PUB_VAL_SIZE 2 * sizeof(uint32_t) // pos + offset
+
+#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
+#define BYTE *ip++
+#define STRING get_string(bf, INT)
+#define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
 
 /* Gets a string from a string table by an index */
 char *get_string(const bytefile *const f, int pos) {
@@ -45,6 +53,12 @@ int get_public_offset(const bytefile *const f, int i) {
 }
 
 size_t get_code_size(const bytefile *const f) { return f->code_size; }
+
+int32_t get_arg(const bytefile *const bf, int pos) {
+  char *ip = bf->code_ptr + pos;
+  (void)(BYTE); /* skip opcode byte */
+  return (int32_t)INT;
+}
 
 /*
 | stringtab_size | global_area_size | public_symbols_number |
@@ -74,7 +88,8 @@ bytefile *read_file(char *fname)
     failure("%s\n", strerror(errno));
   }
 
-  file = (bytefile *)malloc(sizeof(int) * 4 + (size = ftell(f)));
+  file = (bytefile *)malloc(offsetof(bytefile, stringtab_size) +
+                            (size = ftell(f)));
 
   if (file == 0)
   {
@@ -110,13 +125,8 @@ void destroy_file(bytefile *bf) {
 }
 
 /* Disassembles the bytecode instruction */
-int disassemble_instruction(FILE *f, bytefile *bf, int pos, unsigned char* ret_opcode)
-{
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
-#define BYTE *ip++
-#define STRING get_string(bf, INT)
-#define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
-
+int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
+                            bytecode *ret_opcode) {
   char *ip = bf->code_ptr + pos;
   char *ops[] = {"+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
   char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
@@ -347,7 +357,7 @@ stop:
 }
 
 /* Disassembles the bytecode pool */
-void disassemble(FILE *f, bytefile *bf)
+void disassemble(FILE *f, const bytefile *const bf)
 {
   int pos = 0;
   do
@@ -362,7 +372,7 @@ void disassemble(FILE *f, bytefile *bf)
 }
 
 /* Dumps the contents of the file */
-void dump_file(FILE *f, bytefile *bf)
+void dump_file(FILE *f, const bytefile *const bf)
 {
   int i;
 

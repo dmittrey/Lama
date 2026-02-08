@@ -1,0 +1,5 @@
+/bcfreq
+/bcfreq-asan
+/bcfreq-ubsan
+/bcfreq-msan
+/bcfreq-allsan
