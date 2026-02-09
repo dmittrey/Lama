@@ -7,9 +7,10 @@
 #include "bytefile.h"
 #include "disasm.h"
 
-class BytecodeFreq {
+class BytecodeFreq final {
 public:
   explicit BytecodeFreq(const char *const fname);
+  ~BytecodeFreq();
 
   void analyse();
 
@@ -26,8 +27,8 @@ private:
   void find_idioms_double();
 
 private:
-  std::vector<char> reachable_;    // 1X file's code section size
-  std::vector<char> jump_targets_; // 1X file's code section size
+  std::vector<bool> reachable_;    // 1X file's code section size
+  std::vector<bool> jump_targets_; // 1X file's code section size
   std::vector<std::pair<uint32_t, uint32_t>>
       Idioms_; // 8X file's code section size
                // Summary 10X file size (6X left)

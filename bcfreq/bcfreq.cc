@@ -109,9 +109,15 @@ process_idioms_inplace(std::vector<std::pair<uint32_t, uint32_t>> &v,
 
 BytecodeFreq::BytecodeFreq(const char *const fname)
     : bytefile_(read_file(const_cast<char *>(fname)), BytefileDeleter()),
-      reachable_(get_code_size(bytefile_.get())),
-      jump_targets_(get_code_size(bytefile_.get())),
+      reachable_(get_code_size(bytefile_.get()), false),
+      jump_targets_(get_code_size(bytefile_.get()), false),
       Idioms_(get_code_size(bytefile_.get())) {}
+
+BytecodeFreq::~BytecodeFreq() {
+  Idioms_.clear();
+  jump_targets_.clear();
+  reachable_.clear();
+}
 
 bool BytecodeFreq::is_jump(bytecode op) noexcept {
   return op == JMP || op == CJMPZ || op == CJMPNZ;
@@ -136,8 +142,8 @@ void BytecodeFreq::find_reachable_instructions() {
     validate(sym_offset < code_size, "Invalid symbol offset", sym_offset);
     // Check duplications in public symbols
     if (!reachable_.at(sym_offset)) {
-      jump_targets_[sym_offset] = 1;
-      reachable_[sym_offset] = 1;
+      jump_targets_[sym_offset] = true;
+      reachable_[sym_offset] = true;
       workset.push_back(sym_offset);
     }
   }
@@ -157,19 +163,19 @@ void BytecodeFreq::find_reachable_instructions() {
                "Invalid jump/call destination",
                static_cast<uint32_t>(target_i));
       uint32_t target = static_cast<uint32_t>(target_i);
-      jump_targets_[target] = 1;
+      jump_targets_[target] = true;
       if (!reachable_.at(target)) {
-        reachable_[target] = 1;
+        reachable_[target] = true;
         workset.push_back(target);
       }
     }
     if (!is_terminal(op)) {
       uint32_t next_offset = offset + length;
       if (is_call(op)) {
-        jump_targets_[next_offset] = 1;
+        jump_targets_[next_offset] = true;
       }
       if (!reachable_.at(next_offset)) {
-        reachable_[next_offset] = 1;
+        reachable_[next_offset] = true;
         workset.push_back(next_offset);
       }
     }
