@@ -154,7 +154,8 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
   switch (h) {
   case 15:
-    goto stop;
+    fprintf(f, "STOP");
+    break;
 
   /* BINOP */
   case 0:
@@ -350,11 +351,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
   default:
     FAIL;
   }
-  fprintf(f, "\n");
 
-  return ip - bf->code_ptr - pos;
-stop:
-  fprintf(f, "<end>\n");
   return ip - bf->code_ptr - pos;
 }
 

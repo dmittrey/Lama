@@ -13,5 +13,10 @@ int main(int argc, char *argv[]) {
   }
 
   BytecodeFreq bcfreq(argv[1]);
-  bcfreq.analyse();
+
+  try {
+    bcfreq.analyse();
+  } catch (const std::runtime_error &e) {
+    std::cerr << e.what() << '\n';
+  }
 }

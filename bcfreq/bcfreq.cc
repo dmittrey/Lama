@@ -7,134 +7,86 @@
 static void validate(bool condition, const std::string &message,
                      uint32_t bytecode_offset) {
   if (!condition) {
-    throw new std::runtime_error(std::to_string(bytecode_offset) + ": " +
-                                 message);
+    throw std::runtime_error(std::to_string(bytecode_offset) + ": " + message);
   }
 }
 
 static uint32_t idiom1_len_bytes(const bytefile *bf, uint32_t pos) {
-  int l = disassemble_instruction(stdin, bf, (int)pos, nullptr);
-  return (l > 0) ? (uint32_t)l : 0;
+  return disassemble_instruction(stdin, bf, (int)pos, nullptr);
 }
 
 static uint32_t idiom2_len_bytes(const bytefile *bf, uint32_t pos) {
-  uint32_t l1 = idiom1_len_bytes(bf, pos);
-  if (!l1)
-    return 0;
-  uint32_t l2 = idiom1_len_bytes(bf, pos + l1);
-  if (!l2)
-    return 0;
-  return l1 + l2;
+  int l1 = idiom1_len_bytes(bf, pos);
+  int l2 = idiom1_len_bytes(bf, pos + l1);
+
+  return static_cast<uint32_t>(l1) + static_cast<uint32_t>(l2);
 }
 
-struct SingleBytesLess {
+template <uint32_t (*IdiomLen)(const bytefile *, uint32_t)>
+struct IdiomBytesLess {
   const bytefile *bf;
 
   bool operator()(const std::pair<uint32_t, uint32_t> &a,
                   const std::pair<uint32_t, uint32_t> &b) const {
-    uint32_t la = idiom1_len_bytes(bf, a.first);
-    uint32_t lb = idiom1_len_bytes(bf, b.first);
+    const uint32_t la = IdiomLen(bf, a.first);
+    const uint32_t lb = IdiomLen(bf, b.first);
 
     const uint8_t *ba = nullptr, *bb = nullptr;
-    if (get_bytes(bf, a.first, la, &ba) != 0)
-      throw std::runtime_error("get_bytes");
-    if (get_bytes(bf, b.first, lb, &bb) != 0)
-      throw std::runtime_error("get_bytes");
+    validate(get_bytes(bf, a.first, la, &ba) == 0, "not able to get bytes",
+             a.first);
+    validate(get_bytes(bf, b.first, lb, &bb) == 0, "not able to get bytes",
+             b.first);
 
-    size_t m = std::min<size_t>(la, lb);
-    int c = std::memcmp(ba, bb, m);
+    const size_t m = std::min<size_t>(la, lb);
+    const int c = std::memcmp(ba, bb, m);
     if (c != 0)
       return c < 0;
     return la < lb;
   }
 };
 
-static bool single_bytes_equal(const bytefile *bf, uint32_t pa, uint32_t pb) {
-  uint32_t la = idiom1_len_bytes(bf, pa);
-  uint32_t lb = idiom1_len_bytes(bf, pb);
+template <uint32_t (*IdiomLen)(const bytefile *, uint32_t)>
+static bool idiom_bytes_equal(const bytefile *bf, uint32_t pa, uint32_t pb) {
+  uint32_t la = IdiomLen(bf, pa);
+  uint32_t lb = IdiomLen(bf, pb);
   if (la != lb)
     return false;
 
   const uint8_t *ba = nullptr, *bb = nullptr;
-  if (get_bytes(bf, pa, la, &ba) != 0)
-    throw std::runtime_error("get_bytes");
-  if (get_bytes(bf, pb, lb, &bb) != 0)
-    throw std::runtime_error("get_bytes");
+  validate(get_bytes(bf, pa, la, &ba) == 0, "not able to get bytes", pa);
+  validate(get_bytes(bf, pb, lb, &bb) == 0, "not able to get bytes", pb);
+
   return std::memcmp(ba, bb, la) == 0;
 }
 
-struct FreqThenBytesLess {
-  const bytefile *bf;
-
-  bool operator()(const std::pair<uint32_t, uint32_t> &a,
-                  const std::pair<uint32_t, uint32_t> &b) const {
-    if (a.second != b.second)
-      return a.second > b.second;     // freq
-    return SingleBytesLess{bf}(a, b); // tie-break
-  }
-};
-
-struct DoubleBytesLess {
-  const bytefile *bf;
-
-  bool operator()(const std::pair<uint32_t, uint32_t> &a,
-                  const std::pair<uint32_t, uint32_t> &b) const {
-    uint32_t la = idiom2_len_bytes(bf, a.first);
-    uint32_t lb = idiom2_len_bytes(bf, b.first);
-
-    const uint8_t *ba = nullptr, *bb = nullptr;
-    if (get_bytes(bf, a.first, la, &ba) != 0)
-      throw std::runtime_error("get_bytes");
-    if (get_bytes(bf, b.first, lb, &bb) != 0)
-      throw std::runtime_error("get_bytes");
-
-    size_t m = std::min<size_t>(la, lb);
-    int c = std::memcmp(ba, bb, m);
-    if (c != 0)
-      return c < 0;
-    if (la != lb)
-      return la < lb;
-    return a.first < b.first; // детерминизм
-  }
-};
-
-static bool double_bytes_equal(const bytefile *bf, uint32_t pa, uint32_t pb) {
-  uint32_t la = idiom2_len_bytes(bf, pa);
-  uint32_t lb = idiom2_len_bytes(bf, pb);
-  if (la != lb)
-    return false;
-
-  const uint8_t *ba = nullptr, *bb = nullptr;
-  if (get_bytes(bf, pa, la, &ba) != 0)
-    throw std::runtime_error("get_bytes");
-  if (get_bytes(bf, pb, lb, &bb) != 0)
-    throw std::runtime_error("get_bytes");
-  return std::memcmp(ba, bb, la) == 0;
-}
-
-struct FreqThenDoubleBytesLess {
+template <uint32_t (*IdiomLen)(const bytefile *, uint32_t)>
+struct IdiomFreqLess {
   const bytefile *bf;
 
   bool operator()(const std::pair<uint32_t, uint32_t> &a,
                   const std::pair<uint32_t, uint32_t> &b) const {
     if (a.second != b.second)
       return a.second > b.second;
-    return DoubleBytesLess{bf}(a, b);
+    return IdiomBytesLess<IdiomLen>{bf}(a, b);
   }
 };
 
-template <class BytesLess, class BytesEq>
+template <class BytesLess, class BytesEq, class FreqLess, class PrintOne>
 static void
 process_idioms_inplace(std::vector<std::pair<uint32_t, uint32_t>> &v,
-                       const bytefile *bf, BytesLess less, BytesEq eq) {
+                       const bytefile *bf, BytesLess less, BytesEq eq,
+                       FreqLess frless, PrintOne print_one) {
+  // 0. Trim inreachable (N)
   size_t w = 0;
   for (size_t i = 0; i < v.size(); ++i)
     if (v[i].second != 0)
       v[w++] = v[i];
   v.resize(w);
 
+  // 1. Sort (N * logN), N - reached bytecodes
   std::sort(v.begin(), v.end(), less);
 
+  // 2. Squash (N), N - reached bytecodes
   size_t out = 0;
   for (size_t i = 0; i < v.size();) {
     size_t j = i + 1;
@@ -143,7 +95,16 @@ process_idioms_inplace(std::vector<std::pair<uint32_t, uint32_t>> &v,
     v[out++] = {v[i].first, (uint32_t)(j - i)};
     i = j;
   }
+
+  // 3. Dedup (U), U - duplications count
   v.resize(out);
+
+  // 4. Sort (D * logD), D - deduplicated reached idioms
+  std::sort(v.begin(), v.end(), frless);
+
+  // 5.Print
+  for (auto &[pos, cnt] : v)
+    print_one(pos, cnt);
 }
 
 BytecodeFreq::BytecodeFreq(const char *const fname)
@@ -187,8 +148,6 @@ void BytecodeFreq::find_reachable_instructions() {
     bytecode op;
     int len_ret = disassemble_instruction(stdin, bytefile_.get(),
                                           static_cast<int>(offset), &op);
-    if (len_ret <= 0)
-      continue; /* end of code */
     uint32_t length = static_cast<uint32_t>(len_ret);
     validate(offset + length < code_size, "Unexpected end of code",
              offset + length);
@@ -280,62 +239,47 @@ void BytecodeFreq::analyse() {
   const size_t code_size = get_code_size(bytefile_.get());
 
   // ---------- SINGLE ----------
+
+  // Prepare container
   std::fill(Idioms_.begin(), Idioms_.end(),
             std::pair<uint32_t, uint32_t>{0u, 0u});
+
+  // Find idioms
   find_idioms_single();
 
+  // (N * logN), N - reached bytecodes
   process_idioms_inplace(Idioms_, bytefile_.get(),
-                         SingleBytesLess{bytefile_.get()}, single_bytes_equal);
-
-  std::sort(Idioms_.begin(), Idioms_.end(), FreqThenBytesLess{bytefile_.get()});
-  for (auto &[pos, cnt] : Idioms_) {
-    std::cout << cnt << " ";
-    disassemble_instruction(stdout, bytefile_.get(), (int)pos, nullptr);
-  }
+                         IdiomBytesLess<&idiom1_len_bytes>{bytefile_.get()},
+                         idiom_bytes_equal<&idiom1_len_bytes>,
+                         IdiomFreqLess<&idiom1_len_bytes>{bytefile_.get()},
+                         [&](uint32_t pos, uint32_t cnt) {
+                           fprintf(stdout, "%u ", cnt);
+                           disassemble_instruction(stdout, bytefile_.get(),
+                                                   (int)pos, nullptr);
+                           fprintf(stdout, "\n");
+                         });
 
   // ---------- DOUBLE ----------
+
+  // Prepare container
   Idioms_.assign(code_size, {0u, 0u});
+
+  // Find idioms
   find_idioms_double();
 
-  // compact/sort/squash
-  // (сначала сделаем без финального сортировки, потом отсортируем как надо)
-  // Можно просто повторить process_idioms_inplace, но печать для double другая:
-  {
-    // compact
-    size_t w = 0;
-    for (size_t i = 0; i < Idioms_.size(); ++i)
-      if (Idioms_[i].second != 0)
-        Idioms_[w++] = Idioms_[i];
-    Idioms_.resize(w);
-
-    std::sort(Idioms_.begin(), Idioms_.end(), DoubleBytesLess{bytefile_.get()});
-
-    // squash
-    size_t out = 0;
-    for (size_t i = 0; i < Idioms_.size();) {
-      size_t j = i + 1;
-      while (j < Idioms_.size() &&
-             double_bytes_equal(bytefile_.get(), Idioms_[i].first,
-                                Idioms_[j].first)) {
-        ++j;
-      }
-      Idioms_[out++] = {Idioms_[i].first, (uint32_t)(j - i)};
-      i = j;
-    }
-    Idioms_.resize(out);
-
-    // sort by freq desc (+ tie by bytes)
-    std::sort(Idioms_.begin(), Idioms_.end(),
-              FreqThenDoubleBytesLess{bytefile_.get()});
-
-    // print 2 instructions
-    for (auto &[pos, cnt] : Idioms_) {
-      std::cout << cnt << " ";
-      uint32_t l1 =
-          disassemble_instruction(stdout, bytefile_.get(), (int)pos, nullptr);
-      std::cout << "; ";
-      disassemble_instruction(stdout, bytefile_.get(), (int)(pos + l1),
-                              nullptr);
-    }
-  }
+  // Trim & Sort (N * logN), N - reached bytecodes
+  process_idioms_inplace(Idioms_, bytefile_.get(),
+                         IdiomBytesLess<&idiom2_len_bytes>{bytefile_.get()},
+                         idiom_bytes_equal<&idiom2_len_bytes>,
+                         IdiomFreqLess<&idiom2_len_bytes>{bytefile_.get()},
+                         [&](uint32_t pos, uint32_t cnt) {
+                           fprintf(stdout, "%u ", cnt);
+                           uint32_t l1 = idiom1_len_bytes(bytefile_.get(), pos);
+                           disassemble_instruction(stdout, bytefile_.get(),
+                                                   (int)pos, nullptr);
+                           fprintf(stdout, " -> ");
+                           disassemble_instruction(stdout, bytefile_.get(),
+                                                   (int)(pos + l1), nullptr);
+                           fprintf(stdout, "\n");
+                         });
 }
