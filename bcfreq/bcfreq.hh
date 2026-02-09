@@ -22,7 +22,8 @@ private:
 
 private:
   void find_reachable_instructions();
-  void find_idioms();
+  void find_idioms_single();
+  void find_idioms_double();
 
 private:
   std::vector<char> reachable_;    // 1X file's code section size
