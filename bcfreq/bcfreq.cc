@@ -3,7 +3,6 @@
 #include <sstream>
 
 #include "bcfreq.hh"
-#include <span>
 
 static void validate(bool condition, const std::string &message,
                      uint32_t bytecode_offset) {
@@ -13,78 +12,65 @@ static void validate(bool condition, const std::string &message,
   }
 }
 
-template <class GetLen, class Print>
-static void
-count_and_print(const bytefile *bf,
-                std::vector<char> &marked,        // OnesIdioms_ или TwosIdioms_
-                std::vector<size_t> &freq_by_off, // IdiomsFreq_
-                size_t code_size,
-                GetLen get_len, // int(uint32_t off)
-                Print print_off // void(uint32_t off)
-) {
-  size_t max_freq = 0;
+static uint32_t idiom_len_bytes(const bytefile *bf, uint32_t pos) {
+  int l = disassemble_instruction(stdin, bf, (int)(pos), nullptr);
+  if (l <= 0)
+    return 0;
+  return l;
+}
 
-  for (uint32_t off = 0; off < marked.size(); ++off) {
-    if (!marked[off])
-      continue;
+struct SingleBytesLess {
+  const bytefile *bf;
 
-    int len = get_len(off);
-    if (len <= 0)
-      continue;
+  bool operator()(const std::pair<uint32_t, uint32_t> &a,
+                  const std::pair<uint32_t, uint32_t> &b) const {
+    uint32_t la = idiom_len_bytes(bf, a.first);
+    uint32_t lb = idiom_len_bytes(bf, b.first);
 
-    freq_by_off[off] = 1;
+    const uint8_t *ba = nullptr, *bb = nullptr;
+    if (get_bytes(bf, a.first, la, &ba) != 0)
+      throw std::runtime_error("get_bytes");
+    if (get_bytes(bf, b.first, lb, &bb) != 0)
+      throw std::runtime_error("get_bytes");
 
-    const uint8_t *golden = nullptr;
-    if (get_bytes(bf, off, (uint32_t)len, &golden) != 0) {
-      throw std::runtime_error("get_bytes out of range");
-    }
-
-    for (uint32_t next = off + 1; next < marked.size(); ++next) {
-      if (!marked[next])
-        continue;
-
-      int next_len = get_len(next);
-      if (next_len != len)
-        continue;
-
-      const uint8_t *next_p = nullptr;
-      if (get_bytes(bf, next, (uint32_t)next_len, &next_p) != 0) {
-        throw std::runtime_error("get_bytes out of range");
-      }
-
-      // If found equal => incr cur freq and erase marked at next offset
-      if (memcmp(golden, next_p, (size_t)len) == 0) {
-        ++freq_by_off[off];
-        marked[next] = 0;
-      }
-    }
-
-    if (freq_by_off[off] > max_freq)
-      max_freq = freq_by_off[off];
+    size_t m = std::min<size_t>(la, lb);
+    int c = std::memcmp(ba, bb, m);
+    if (c != 0)
+      return c < 0;
+    return la < lb;
   }
+};
 
-  for (size_t f = max_freq; f >= 1; --f) {
-    for (size_t off = 0; off < code_size && off < marked.size(); ++off) {
-      if (!marked[off])
-        continue;
-      if (freq_by_off[off] != f)
-        continue;
+struct FreqThenBytesLess {
+  const bytefile *bf;
 
-      std::cout << f << " ";
-      print_off((uint32_t)off);
-      std::cout << "\n";
-    }
-    if (f == 1)
-      break;
+  bool operator()(const std::pair<uint32_t, uint32_t> &a,
+                  const std::pair<uint32_t, uint32_t> &b) const {
+    if (a.second != b.second)
+      return a.second > b.second;     // freq
+    return SingleBytesLess{bf}(a, b); // tie-break
   }
+};
+
+static bool single_bytes_equal(const bytefile *bf, uint32_t pa, uint32_t pb) {
+  uint32_t la = idiom_len_bytes(bf, pa);
+  uint32_t lb = idiom_len_bytes(bf, pb);
+  if (la != lb)
+    return false;
+
+  const uint8_t *ba = nullptr, *bb = nullptr;
+  if (get_bytes(bf, pa, la, &ba) != 0)
+    throw std::runtime_error("get_bytes");
+  if (get_bytes(bf, pb, lb, &bb) != 0)
+    throw std::runtime_error("get_bytes");
+  return std::memcmp(ba, bb, la) == 0;
 }
 
 BytecodeFreq::BytecodeFreq(const char *const fname)
     : bytefile_(read_file(const_cast<char *>(fname)), BytefileDeleter()),
       reachable_(get_code_size(bytefile_.get())),
       jump_targets_(get_code_size(bytefile_.get())),
-      OnesIdioms_(get_code_size(bytefile_.get())),
-      TwosIdioms_(get_code_size(bytefile_.get())) {}
+      Idioms_(get_code_size(bytefile_.get())) {}
 
 bool BytecodeFreq::is_jump(bytecode op) noexcept {
   return op == JMP || op == CJMPZ || op == CJMPNZ;
@@ -166,18 +152,19 @@ void BytecodeFreq::find_idioms() {
     validate(offset + length < code_size, "Unexpected end of code",
              offset + length);
 
-    OnesIdioms_[offset] = 1;
-    uint32_t next_offset = offset + length;
-    // Twos sequence (We can go to next and its not separate dot)
-    if (!is_call(op) && !is_terminal(op) && reachable_.at(next_offset) &&
-        !jump_targets_.at(next_offset)) {
-      int next_len = disassemble_instruction(
-          stdin, bytefile_.get(), static_cast<int>(next_offset), NULL);
-      uint32_t next_length = static_cast<uint32_t>(next_len);
-      validate(next_offset + next_length < code_size, "Unexpected end of code",
-               next_offset + next_length);
-      TwosIdioms_[offset] = 1;
-    }
+    Idioms_[offset] = {offset, 1};
+    // uint32_t next_offset = offset + length;
+    // // Twos sequence (We can go to next and its not separate dot)
+    // if (!is_call(op) && !is_terminal(op) && reachable_.at(next_offset) &&
+    //     !jump_targets_.at(next_offset)) {
+    //   int next_len = disassemble_instruction(
+    //       stdin, bytefile_.get(), static_cast<int>(next_offset), NULL);
+    //   uint32_t next_length = static_cast<uint32_t>(next_len);
+    //   validate(next_offset + next_length < code_size, "Unexpected end of
+    //   code",
+    //            next_offset + next_length);
+    //   Idioms_[offset].second = MARK_TWO(Idioms_[offset].second);
+    // }
     offset += length;
   }
 }
@@ -186,41 +173,37 @@ void BytecodeFreq::analyse() {
   find_reachable_instructions();
   find_idioms();
 
-  const size_t code_size = get_code_size(bytefile_.get());
-  std::vector<size_t>
-      IdiomsFreq_; // For each file byte -> 8 byte => 8X file size, 12X for now
-  IdiomsFreq_.resize(code_size);
+  // delete unused offsets
+  size_t w = 0;
+  for (size_t i = 0; i < Idioms_.size(); ++i) {
+    if (Idioms_[i].second != 0) {
+      Idioms_[w++] = Idioms_[i];
+    }
+  }
+  Idioms_.resize(w);
 
-  // One
-  count_and_print(
-      bytefile_.get(), OnesIdioms_, IdiomsFreq_, code_size,
-      [&](uint32_t off) -> int {
-        return disassemble_instruction(stdin, bytefile_.get(), (int)off,
-                                       nullptr);
-      },
-      [&](uint32_t off) {
-        disassemble_instruction(stdout, bytefile_.get(), (int)off, nullptr);
-      });
+  // Sort
+  std::sort(Idioms_.begin(), Idioms_.end(), SingleBytesLess{bytefile_.get()});
 
-  // Two
-  count_and_print(
-      bytefile_.get(), TwosIdioms_, IdiomsFreq_, code_size,
-      [&](uint32_t off) -> int {
-        int l1 =
-            disassemble_instruction(stdin, bytefile_.get(), (int)off, nullptr);
-        if (l1 <= 0)
-          return l1;
-        int l2 = disassemble_instruction(stdin, bytefile_.get(),
-                                         (int)(off + (uint32_t)l1), nullptr);
-        if (l2 <= 0)
-          return l2;
-        return l1 + l2;
-      },
-      [&](uint32_t off) {
-        int l1 =
-            disassemble_instruction(stdout, bytefile_.get(), (int)off, nullptr);
-        std::cout << "; ";
-        disassemble_instruction(stdout, bytefile_.get(),
-                                (int)(off + (uint32_t)l1), nullptr);
-      });
+  // Squash (vector len compares)
+  size_t u = 0;
+  for (size_t i = 0; i < Idioms_.size();) {
+    size_t j = i + 1;
+    while (j < Idioms_.size() &&
+           single_bytes_equal(bytefile_.get(), Idioms_[i].first,
+                              Idioms_[j].first)) {
+      ++j;
+    }
+    Idioms_[u++] = {Idioms_[i].first, (uint32_t)(j - i)};
+    i = j;
+  }
+  Idioms_.resize(u);
+
+  // Output sort
+  std::sort(Idioms_.begin(), Idioms_.end(), FreqThenBytesLess{bytefile_.get()});
+
+  // Print
+  for (const auto &[pos, cnt] : Idioms_) {
+    disassemble_instruction(stdout, bytefile_.get(), (int)pos, nullptr);
+  }
 }

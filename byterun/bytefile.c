@@ -350,7 +350,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
   default:
     FAIL;
   }
-  fprintf(stderr, "\n");
+  fprintf(f, "\n");
 
   return ip - bf->code_ptr - pos;
 stop:

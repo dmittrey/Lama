@@ -27,10 +27,9 @@ private:
 private:
   std::vector<char> reachable_;    // 1X file's code section size
   std::vector<char> jump_targets_; // 1X file's code section size
-  std::vector<char> OnesIdioms_;   // 1X file's code section size (Mark as 1
-                                   // pos equals to idiom pos)
-  std::vector<char> TwosIdioms_;   // 1X file's code section size (Mark as 1
-                                   // pos equals to idiom pos)
+  std::vector<std::pair<uint32_t, uint32_t>>
+      Idioms_; // 8X file's code section size
+               // 10X file size (6X left)
 
 private:
   static bool is_jump(bytecode op) noexcept;
