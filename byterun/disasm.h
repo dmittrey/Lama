@@ -73,6 +73,18 @@ typedef enum bytecode {
   STOP = 0xF0
 } bytecode;
 
+/* Static operand type for verification: what an instruction pushes on the stack
+ */
+typedef enum operand_type_e {
+  OT_REF = 0,
+  OT_IMM = 1,
+  OT_UNKNOWN = 2,
+} operand_type_e;
+
+/* Returns the type of the value pushed by op (OT_UNKNOWN if op does not push
+ * exactly one value) */
+int get_pushed_operand_type(bytecode op);
+
 int disassemble_instruction(FILE *f, const struct bytefile *const bf,
                             int offset, bytecode *const ret_opcode,
                             uint32_t *inc, uint32_t *dec);

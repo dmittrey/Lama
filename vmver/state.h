@@ -30,18 +30,6 @@ static inline void bc_require_bytes(size_t n, const char *what) {
   }
 }
 error_code_e ip_jmp(int32_t offset) {
-  if (offset < 0) {
-    fprintf(stderr, "vm: jump offset negative: %d at ip=0x%.8lx\n", offset,
-            __ip - __bf->code_ptr);
-    return ERROR_JUMP_OFFSET_NEGATIVE;
-  }
-  if (offset >= __bf->code_size) {
-    fprintf(stderr,
-            "vm: jump offset out of range: %d(code size=%lu) at ip=0x%.8lx\n",
-            offset, __bf->code_size, __ip - __bf->code_ptr);
-    return ERROR_JUMP_OFFSET_OUT_OF_RANGE;
-  }
-
   __ip = ip_base() + offset;
   return ERROR_NONE;
 }

@@ -153,12 +153,6 @@ static inline aint closure_capture_ref(aint clos, uint32_t idx) {
             TAG(d->data_header));
   }
 
-  aint len = LEN(d->data_header); // len = n + 1
-  if ((aint)(idx + 1) >= len) {
-    failure("LD/ST/LDA C: captured index %u out of range (len=%ld)\n", idx,
-            len);
-  }
-
   return ((aint *)d->contents)[idx + 1];
 }
 
@@ -170,11 +164,6 @@ static inline aint *closure_capture_slot_addr(aint clos, uint32_t idx) {
   if (TAG(d->data_header) != CLOSURE_TAG) {
     failure("closure_capture_slot_addr: closure expected, tag=%ld\n",
             TAG(d->data_header));
-  }
-  aint len = LEN(d->data_header);
-  if ((aint)(idx + 1) >= len) {
-    failure("closure_capture_slot_addr: index %u out of range (len=%ld)\n", idx,
-            len);
   }
   return ((aint *)d->contents) + (idx + 1);
 }
@@ -600,10 +589,6 @@ static error_code_e op_cjmpnz(FILE *f, char l) {
 static error_code_e op_begin(FILE *f, char l) {
   int nargs = bc_read_int();
   int nlocals = bc_read_int();
-  if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
-    failure("BEGIN:\t nargs mismatch: exp: %d act: %d\n", cs_nargs(), nargs);
-    return ERROR_NARGS_MISMATCH;
-  }
   DBG("BEGIN\t%d %d", nargs, nlocals);
   RETURN_IF_ERROR(cs_alloc_locals(nlocals));
   return ERROR_NONE;
@@ -612,10 +597,6 @@ static error_code_e op_begin(FILE *f, char l) {
 static error_code_e op_cbegin(FILE *f, char l) {
   int nargs = bc_read_int();
   int nlocals = bc_read_int();
-  if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
-    failure("CBEGIN:\t nargs mismatch: exp: %d act: %d\n", cs_nargs(), nargs);
-    return ERROR_NARGS_MISMATCH;
-  }
   DBG("CBEGIN\t%d\t%d", nargs, nlocals);
   RETURN_IF_ERROR(cs_alloc_locals((uint32_t)nlocals));
   return ERROR_NONE;
@@ -1088,27 +1069,27 @@ int main(int argc, char *argv[]) {
   }
 
   /* Load bytecode */
-  // __bf = read_file(argv[1]);
-  // if (!__bf) {
-  // return 1;
-  // }
+  __bf = read_file(argv[1]);
+  if (!__bf) {
+    return 1;
+  }
 
   /* Virtual regs */
-  // __ip = __bf->code_ptr;
+  __ip = __bf->code_ptr;
 
   /* Create call stack */
-  // cs_init(__bf->global_area_size);
+  cs_init(__bf->global_area_size);
 
   /* Interpret bytecode */
-  // error_code_e error_code = ERROR_NONE;
-  // interpret_bc(stdout, &error_code);
-  // if (error_code != ERROR_NONE && error_code != ERROR_STOP) {
-  //   fprintf(stderr, "Error: %d\n", error_code);
-  //   return 1;
-  // }
+  error_code_e error_code = ERROR_NONE;
+  interpret_bc(stdout, &error_code);
+  if (error_code != ERROR_NONE && error_code != ERROR_STOP) {
+    fprintf(stderr, "Error: %d\n", error_code);
+    return 1;
+  }
 
   /* Cleanup */
-  // free(__bf);
+  free(__bf);
 
   return 0;
 }

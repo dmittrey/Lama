@@ -148,9 +148,6 @@ static inline error_code_e __cs_push_slot(csval_t v) {
   return ERROR_NONE;
 }
 static inline error_code_e __cs_pop_slot(csval_t *ret) {
-  if (__cs_sp_slots() == 0) {
-    return ERROR_OPND_STACK_UNDERFLOW;
-  }
   __cs_sp_sub(1);
   if (!ret)
     return ERROR_NONE; // To not stubbing ret container
@@ -275,9 +272,6 @@ static error_code_e cs_alloc_locals(uint32_t nlocals) {
   return ERROR_NONE;
 }
 static error_code_e cs_pop_frame(uint32_t *ret_off) {
-  if (!__cs_nframes)
-    return ERROR_STACK_UNDERFLOW;
-
   /* Epilog */
   __cs_sp_set(__cs_fp);
   csval_t prev_fp_val;
@@ -309,53 +303,29 @@ static error_code_e cs_pop_frame(uint32_t *ret_off) {
 
 /* Access arguments and locals */
 static error_code_e callstack_get_local(uint32_t index, csval_t *ret) {
-  uint32_t nlocals_ = __cs_nlocs();
-  if (index >= nlocals_)
-    return ERROR_LOCL_IDX_OUT_OF_RANGE;
-
   size_t base = __cs_locs_base_idx();
   *ret = __cs_slot_read(base + index);
   return ERROR_NONE;
 }
 static error_code_e callstack_set_local(uint32_t index, csval_t value) {
-  uint32_t nlocals_ = __cs_nlocs();
-  if (index >= nlocals_)
-    return ERROR_LOCL_IDX_OUT_OF_RANGE;
-
   size_t base = __cs_locs_base_idx();
   return __cs_slot_write(base + index, value);
 }
 static error_code_e callstack_get_arg(uint32_t index, csval_t *ret) {
-  uint32_t nargs_ = cs_nargs();
-  if (index >= nargs_)
-    return ERROR_ARG_IDX_OUT_OF_RANGE;
-
   size_t base = __cs_args_base_idx();
   *ret = __cs_slot_read(base + index);
   return ERROR_NONE;
 }
 static error_code_e callstack_set_arg(uint32_t index, csval_t value) {
-  uint32_t nargs_ = cs_nargs();
-  if (index >= nargs_)
-    return ERROR_ARG_IDX_OUT_OF_RANGE;
-
   size_t base = __cs_args_base_idx();
   return __cs_slot_write(base + index, value);
 }
 static error_code_e callstack_get_glob(uint32_t index, csval_t *ret) {
-  uint32_t nglobals_ = __cs_nglob;
-  if (index >= nglobals_)
-    return ERROR_GLOB_IDX_OUT_OF_RANGE;
-
   size_t base = __cs_globs_base_idx();
   *ret = __cs_slot_read(base + index);
   return ERROR_NONE;
 }
 static error_code_e callstack_set_glob(uint32_t index, csval_t value) {
-  uint32_t nglobals_ = __cs_nglob;
-  if (index >= nglobals_)
-    return ERROR_GLOB_IDX_OUT_OF_RANGE;
-
   size_t base = __cs_globs_base_idx();
   return __cs_slot_write(base + index, value);
 }
@@ -363,9 +333,6 @@ static error_code_e callstack_set_glob(uint32_t index, csval_t value) {
 /* Operands stack */
 static error_code_e callstack_pop_operand(csval_t *ret) {
   uint32_t noperands_ = __cs_noperands();
-  if (noperands_ == 0)
-    return ERROR_OPND_STACK_UNDERFLOW;
-
   RETURN_IF_ERROR(__cs_pop_slot(ret));
   RETURN_IF_ERROR(__cs_write_imm(__cs_noperands_base_idx(), noperands_ - 1));
   return ERROR_NONE;
@@ -378,15 +345,8 @@ static error_code_e callstack_push_operand(csval_t value) {
 }
 static error_code_e callstack_pop_n_operands(uint32_t n) {
   uint32_t noperands_ = __cs_noperands();
-  if (noperands_ < n)
-    return ERROR_OPND_STACK_UNDERFLOW;
-
   // Update noperands
   RETURN_IF_ERROR(__cs_write_imm(__cs_noperands_base_idx(), noperands_ - n));
-  if (__cs_sp_slots() < n) {
-    return ERROR_STACK_UNDERFLOW;
-  }
-
   __cs_sp_sub(n);
 
   return ERROR_NONE;
@@ -400,31 +360,16 @@ static csval_t callstack_operands_tail_ref(uint32_t n) {
 
 /* Reference */
 static error_code_e callstack_get_local_addr(uint32_t index, csval_t *ret) {
-  uint32_t nlocals_ = __cs_nlocs();
-  if (index >= nlocals_) {
-    return ERROR_LOCL_IDX_OUT_OF_RANGE;
-  }
-
   size_t slot_off = __cs_locs_base_idx() + index;
   *ret = csval_intern(slot_off);
   return ERROR_NONE;
 }
 static error_code_e callstack_get_arg_addr(uint32_t index, csval_t *ret) {
-  uint32_t nargs_ = cs_nargs();
-  if (index >= nargs_) {
-    return ERROR_ARG_IDX_OUT_OF_RANGE;
-  }
-
   size_t slot_off = __cs_args_base_idx() + index;
   *ret = csval_intern(slot_off);
   return ERROR_NONE;
 }
 static error_code_e callstack_get_glob_addr(uint32_t index, csval_t *ret) {
-  uint32_t nglob_ = __cs_nglob;
-  if (index >= nglob_) {
-    return ERROR_GLOB_IDX_OUT_OF_RANGE;
-  }
-
   size_t slot_off = __cs_globs_base_idx() + index;
   *ret = csval_intern(slot_off);
   return ERROR_NONE;

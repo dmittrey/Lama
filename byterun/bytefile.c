@@ -87,6 +87,53 @@ int get_bytes(const bytefile *const bf, uint32_t pos, uint32_t len,
   return 0;
 }
 
+int get_pushed_operand_type(bytecode op) {
+  unsigned h = (op & 0xF0) >> 4;
+  unsigned l = op & 0x0F;
+  switch (h) {
+  case 0:
+    return (int)OT_IMM; /* BINOP */
+  case 1:
+    if (op == CONST)
+      return (int)OT_IMM;
+    if (op == STRING || op == SEXP)
+      return (int)OT_UNKNOWN;
+    if (op == STI || op == STA)
+      return (int)OT_UNKNOWN;
+    if (op == DUP || op == SWAP || op == ELEM)
+      return (int)OT_UNKNOWN;
+    break;
+  case 2:
+  case 3:
+    return (int)OT_REF; /* LD*, LDA* */
+  case 4:
+    return (int)OT_UNKNOWN; /* ST* no push; CJMP* no push; BEGIN/CBEGIN no push;
+                               CLOSURE push ref */
+    break;
+  case 5:
+    if (l == 4)
+      return (int)OT_REF;   /* CLOSURE */
+    return (int)OT_UNKNOWN; /* CJMPZ/NZ, BEGIN, CBEGIN */
+  case 6:
+    return (int)OT_UNKNOWN; /* CALL, CALLC */
+  case 7:
+    return (int)OT_UNKNOWN; /* TAG */
+  case 8:
+    return (int)OT_UNKNOWN; /* ARRAY */
+  case 9:
+    return (int)OT_UNKNOWN; /* FAIL, LINE */
+  case 10:
+    return (int)OT_IMM; /* PATT_* push boolean/int */
+  case 11:
+    return (int)OT_UNKNOWN; /* CALL_LREAD etc */
+  case 15:
+    return (int)OT_UNKNOWN; /* STOP */
+  default:
+    break;
+  }
+  return (int)OT_UNKNOWN;
+}
+
 /* Disassembles the bytecode instruction */
 int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
                             bytecode *ret_opcode, uint32_t *inc,
