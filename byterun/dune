@@ -3,6 +3,8 @@
  (deps
   (:main byterun.c bytefile.c)
   (:runtime ../runtime/runtime.a)
+  bytefile.h
+  disasm.h
   mac-specific-flags.txt)
  (mode
   (promote (until-clean)))

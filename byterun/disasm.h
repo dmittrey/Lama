@@ -70,11 +70,12 @@ typedef enum bytecode {
   CALL_LLENGTH = 0x72,
   CALL_LSTRING = 0x73,
   CALL_BARRAY = 0x74,
-  STOP = 0xF0
+  STOP = 0xFF
 } bytecode;
 
 int disassemble_instruction(FILE *f, const struct bytefile *const bf,
-                            int offset, bytecode *const ret_opcode);
+                            int offset, bytecode *const ret_opcode,
+                            uint32_t *inc, uint32_t *dec);
 
 #ifdef __cplusplus
 }

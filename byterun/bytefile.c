@@ -9,56 +9,7 @@
 #include "bytefile.h"
 #include "disasm.h"
 
-void *__start_custom_data;
-void *__stop_custom_data;
-
-/* The unpacked representation of bytecode file */
-typedef struct bytefile {
-  char *string_ptr; /* A pointer to the beginning of the string table */
-  int *public_ptr;  /* A pointer to the beginning of publics table    */
-  char *code_ptr;   /* A pointer to the bytecode itself               */
-  int *global_ptr;  /* A pointer to the global area                   */
-  size_t code_size;
-  int stringtab_size;   /* The size (in bytes) of the string table        */
-  int global_area_size; /* The size (in words) of global area             */
-  int public_symbols_number; /* The number of public symbols */
-  char buffer[0];
-} bytefile;
-
 #define PUB_VAL_SIZE 2 * sizeof(uint32_t) // pos + offset
-
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
-#define BYTE *ip++
-#define STRING get_string(bf, INT)
-#define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
-
-/* Gets a string from a string table by an index */
-char *get_string(const bytefile *const f, int pos) {
-  return &f->string_ptr[pos];
-}
-
-/* Implement bytefile.h */
-int get_public_count(const bytefile *const f) {
-  return f->public_symbols_number;
-}
-
-/* Gets a name for a public symbol */
-char *get_public_name(const bytefile *const f, int i) {
-  return get_string(f, f->public_ptr[i * 2]);
-}
-
-/* Gets an offset for a publie symbol */
-int get_public_offset(const bytefile *const f, int i) {
-  return f->public_ptr[i * 2 + 1];
-}
-
-size_t get_code_size(const bytefile *const f) { return f->code_size; }
-
-int32_t get_arg(const bytefile *const bf, int pos) {
-  char *ip = bf->code_ptr + pos;
-  (void)(BYTE); /* skip opcode byte */
-  return (int32_t)INT;
-}
 
 /*
 | stringtab_size | global_area_size | public_symbols_number |
@@ -138,51 +89,79 @@ int get_bytes(const bytefile *const bf, uint32_t pos, uint32_t len,
 
 /* Disassembles the bytecode instruction */
 int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
-                            bytecode *ret_opcode) {
+                            bytecode *ret_opcode, uint32_t *inc,
+                            uint32_t *dec) {
+  if ((size_t)pos >= bf->code_size)
+    return -1;
   char *ip = bf->code_ptr + pos;
   char *ops[] = {
       "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
   char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
   char *lds[] = {"LD", "LDA", "ST"};
 
-  char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
+  unsigned char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
 
   if (ret_opcode)
     *ret_opcode = x;
+  if (inc)
+    *inc = 0;
+  if (dec)
+    *dec = 0;
 
-  fprintf(f, "0x%.8lx:\t", ip - bf->code_ptr + pos - 1);
+  fprintf(f, "0x%.8x:\t", pos);
 
   switch (h) {
   case 15:
-    fprintf(f, "STOP");
+    fprintf(f, "STOP %d", x);
     break;
 
   /* BINOP */
   case 0:
     fprintf(f, "BINOP\t%s", ops[l - 1]);
+    if (dec)
+      *dec = 2;
+    if (inc)
+      *inc = 1;
     break;
 
   case 1:
     switch (l) {
     case 0:
       fprintf(f, "CONST\t%d", INT);
+      if (inc)
+        *inc = 1;
       break;
 
     case 1:
-      fprintf(f, "STRING\t%s", STRING);
+      fprintf(f, "STRING\t%s", get_string(bf, INT));
+      if (inc)
+        *inc = 1;
       break;
 
     case 2:
-      fprintf(f, "SEXP\t%s ", STRING);
-      fprintf(f, "%d", INT);
+      fprintf(f, "SEXP\t%s ", get_string(bf, INT));
+      int n = INT;
+      fprintf(f, "%d", n);
+      if (dec)
+        *dec = n;
+      if (inc)
+        *inc = 1;
       break;
 
     case 3:
       fprintf(f, "STI");
+      if (dec)
+        *dec = 2;
+      if (inc)
+        *inc = 1;
       break;
 
     case 4:
       fprintf(f, "STA");
+      if (dec)
+        *dec = 2; // Take more flexible
+      if (inc)
+        *inc = 1;
       break;
 
     case 5:
@@ -191,37 +170,63 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
     case 6:
       fprintf(f, "END");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 7:
       fprintf(f, "RET");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 8:
       fprintf(f, "DROP");
+      if (dec)
+        *dec = 1;
       break;
 
     case 9:
       fprintf(f, "DUP");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 2;
       break;
 
     case 10:
       fprintf(f, "SWAP");
+      if (dec)
+        *dec = 2;
+      if (inc)
+        *inc = 2;
       break;
 
     case 11:
       fprintf(f, "ELEM");
+      if (dec)
+        *dec = 2;
+      if (inc)
+        *inc = 1;
       break;
 
     default:
-      FAIL;
+      failure("ERROR: invalid opcode %d-%d\n", h, l);
     }
     break;
 
+  case 4:
+    if (dec)
+      *dec += 1;
   case 2:
   case 3:
-  case 4:
     fprintf(f, "%s\t", lds[h - 2]);
+    if (inc)
+      *inc += 1;
     switch (l) {
     case 0:
       fprintf(f, "G(%d)", INT);
@@ -236,7 +241,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
       fprintf(f, "C(%d)", INT);
       break;
     default:
-      FAIL;
+      failure("ERROR: invalid opcode %d-%d\n", h, l);
     }
     break;
 
@@ -244,10 +249,14 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
     switch (l) {
     case 0:
       fprintf(f, "CJMPz\t0x%.8x", INT);
+      if (dec)
+        *dec = 1;
       break;
 
     case 1:
       fprintf(f, "CJMPnz\t0x%.8x", INT);
+      if (dec)
+        *dec = 1;
       break;
 
     case 2:
@@ -262,6 +271,8 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
     case 4:
       fprintf(f, "CLOSURE\t0x%.8x", INT);
+      if (inc)
+        *inc = 1;
       {
         int n = INT;
         for (int i = 0; i < n; i++) {
@@ -279,7 +290,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
             fprintf(f, "C(%d)", INT);
             break;
           default:
-            FAIL;
+            failure("ERROR: invalid opcode %d-%d\n", h, l);
           }
         }
       };
@@ -291,21 +302,36 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
     case 6:
       fprintf(f, "CALL\t0x%.8x ", INT);
-      fprintf(f, "%d", INT);
+      int n = INT;
+      fprintf(f, "%d", n);
+      if (dec)
+        *dec = n;
+      if (inc)
+        *inc = 1;
       break;
 
     case 7:
-      fprintf(f, "TAG\t%s ", STRING);
+      fprintf(f, "TAG\t%s ", get_string(bf, INT));
       fprintf(f, "%d", INT);
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 8:
       fprintf(f, "ARRAY\t%d", INT);
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 9:
       fprintf(f, "FAIL\t%d", INT);
       fprintf(f, "%d", INT);
+      if (dec)
+        *dec = 1;
       break;
 
     case 10:
@@ -313,44 +339,70 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
       break;
 
     default:
-      FAIL;
+      failure("ERROR: invalid opcode %d-%d\n", h, l);
     }
     break;
 
   case 6:
     fprintf(f, "PATT\t%s", pats[l]);
+    if (dec)
+      *dec = 1;
+    if (inc)
+      *inc = 1;
     break;
 
   case 7: {
     switch (l) {
     case 0:
       fprintf(f, "CALL\tLread");
+      if (inc)
+        *inc = 1;
       break;
 
     case 1:
       fprintf(f, "CALL\tLwrite");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 2:
       fprintf(f, "CALL\tLlength");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 3:
       fprintf(f, "CALL\tLstring");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
-    case 4:
-      fprintf(f, "CALL\tBarray\t%d", INT);
+    case 4: {
+      int n = INT;
+      fprintf(f, "CALL\tBarray\t%d", n);
+      if (dec)
+        *dec = n;
+      if (inc)
+        *inc = 1;
       break;
+    }
 
     default:
-      FAIL;
+      failure("ERROR: invalid opcode %d-%d\n", h, l);
     }
   } break;
 
   default:
-    FAIL;
+    failure("ERROR: invalid opcode %d-%d\n", h, l);
   }
+
+  fprintf(f, "\n");
 
   return ip - bf->code_ptr - pos;
 }
@@ -360,7 +412,8 @@ void disassemble(FILE *f, const bytefile *const bf) {
   bytecode op;
   int pos = 0;
   do {
-    int size = disassemble_instruction(f, bf, pos, &op);
+    uint32_t inc = 0, dec = 0;
+    int size = disassemble_instruction(f, bf, pos, &op, &inc, &dec);
     if (op == STOP) {
       break;
     }
