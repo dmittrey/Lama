@@ -3,6 +3,7 @@
 #include <sstream>
 
 #include "bcfreq.hh"
+#include "bytefile.h"
 
 // 31 bit pure address -> 32 bit address with 1 bit for JMP mark
 #define BOX_WITH_JMP_MARK(x, MARK) ((x) | (MARK << 31))
