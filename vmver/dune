@@ -1,0 +1,15 @@
+(rule
+ (target vmver)
+ (mode
+  (promote (until-clean)))
+ (deps Makefile vmver.c state.h callstack.h csval.h error.h ../byterun/bytefile.h ../byterun/bytefile.c ../byterun/disasm.h ../runtime/runtime.a)
+ (action
+  (run make)))
+
+(rule
+ (target vmver-allsan)
+ (mode
+  (promote (until-clean)))
+ (deps Makefile vmver.c state.h callstack.h csval.h error.h ../byterun/bytefile.h ../byterun/bytefile.c ../byterun/disasm.h ../runtime/runtime.a)
+ (action
+  (run make vmver-allsan)))

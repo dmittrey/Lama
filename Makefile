@@ -37,8 +37,8 @@ regression-expressions:
 vm-regression:
 	@./vm/regression/prepare_regression.sh
 
-vm-regression-expressions:
-	@./vm/regression/prepare_regression_long.sh
+vmver-regression:
+	@./vmver/regression/prepare_regression.sh
 
 clean:
 	@dune clean
