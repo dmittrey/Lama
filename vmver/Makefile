@@ -4,17 +4,23 @@ UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S),Linux)
     CC=gcc
+    CXX=g++
 else ifeq ($(UNAME_S),Darwin)
     CC=clang
+    CXX=clang++
     ARCH = -arch x86_64
 endif
 
 DISABLE_WARNINGS=-Wno-shift-negative-value
-COMMON_FLAGS=$(DISABLE_WARNINGS) -g -fstack-protector-all $(ARCH) --std=c11 -I. -I../runtime -I../byterun
-PROD_FLAGS=$(COMMON_FLAGS) -DLAMA_ENV
-DEBUG_FLAGS=$(COMMON_FLAGS) -DLAMA_ENV -DDEBUG
+COMMON_FLAGS=$(DISABLE_WARNINGS) -g -fstack-protector-all $(ARCH) -I. -I../runtime -I../byterun
+COMMON_CFLAGS=$(COMMON_FLAGS) --std=c11 -DLAMA_ENV
+COMMON_CXXFLAGS=$(COMMON_FLAGS) --std=c++17 -DLAMA_ENV
+PROD_FLAGS=$(COMMON_CFLAGS)
+DEBUG_FLAGS=$(COMMON_CFLAGS) -DLAMA_ENV -DDEBUG
+PROD_CXXFLAGS=$(COMMON_CXXFLAGS)
+DEBUG_CXXFLAGS=$(COMMON_CXXFLAGS) -DDEBUG
 
-OBJS=vmver.c bytefile.o ../runtime/runtime.a
+OBJS=vmver.o verify.o bytefile.o ../runtime/runtime.a
 
 # Sanitizer flags
 ASAN_FLAGS=-fsanitize=address -fno-omit-frame-pointer
@@ -26,27 +32,33 @@ all: vmver
 debug: vmver-allsan
 
 vmver: $(OBJS)
-	$(CC) $(PROD_FLAGS) -o vmver $(OBJS)
+	$(CXX) $(PROD_CXXFLAGS) -o vmver $(OBJS) -lc++
+
+vmver.o: vmver.c
+	$(CC) $(PROD_FLAGS) -c $< -o $@
+
+verify.o: verify.cc
+	$(CXX) $(PROD_CXXFLAGS) -c $< -o $@
 
 bytefile.o: ../byterun/bytefile.c
 	$(CC) $(PROD_FLAGS) -c $< -o $@
 
 %.o: %.cc
-	$(CC) $(PROD_FLAGS) -c $< -o $@
+	$(CXX) $(PROD_CXXFLAGS) -c $< -o $@
 
 vmver-asan: $(OBJS)
-	$(CC) $(DEBUG_FLAGS) $(ASAN_FLAGS) -o vmver-asan $(OBJS)
+	$(CXX) $(DEBUG_CXXFLAGS) $(ASAN_FLAGS) -o vmver-asan $(OBJS) -lc++
 
 vmver-ubsan: $(OBJS)
-	$(CC) $(DEBUG_FLAGS) $(UBSAN_FLAGS) -o vmver-ubsan $(OBJS)
+	$(CXX) $(DEBUG_CXXFLAGS) $(UBSAN_FLAGS) -o vmver-ubsan $(OBJS) -lc++
 
 vmver-msan: $(OBJS)
-	$(CC) $(DEBUG_FLAGS) $(MSAN_FLAGS) -o vmver-msan $(OBJS)
+	$(CXX) $(DEBUG_CXXFLAGS) $(MSAN_FLAGS) -o vmver-msan $(OBJS) -lc++
 
 vmver-allsan: $(OBJS)
-	$(CC) $(DEBUG_FLAGS) $(ASAN_FLAGS) $(UBSAN_FLAGS) -o vmver-allsan $(OBJS)
+	$(CXX) $(DEBUG_CXXFLAGS) $(ASAN_FLAGS) $(UBSAN_FLAGS) -o vmver-allsan $(OBJS) -lc++
 
 clean:
-	$(RM) vmver vmver-asan vmver-ubsan vmver-msan vmver-allsan *~
+	$(RM) vmver vmver-asan vmver-ubsan vmver-msan vmver-allsan vmver.o verify.o *~
 
 .PHONY: all clean vmver-asan vmver-ubsan vmver-msan vmver-allsan

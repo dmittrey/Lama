@@ -89,7 +89,8 @@ int get_bytes(const bytefile *const bf, uint32_t pos, uint32_t len,
 
 /* Disassembles the bytecode instruction */
 int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
-                            bytecode *ret_opcode) {
+                            bytecode *ret_opcode, uint32_t *inc,
+                            uint32_t *dec) {
   char *ip = bf->code_ptr + pos;
   char *ops[] = {
       "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
@@ -100,6 +101,10 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
   if (ret_opcode)
     *ret_opcode = x;
+  if (inc)
+    *inc = 0;
+  if (dec)
+    *dec = 0;
 
   fprintf(f, "0x%.8lx:\t", ip - bf->code_ptr + pos - 1);
 
@@ -111,29 +116,50 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
   /* BINOP */
   case 0:
     fprintf(f, "BINOP\t%s", ops[l - 1]);
+    if (dec)
+      *dec = 2;
+    if (inc)
+      *inc = 1;
     break;
 
   case 1:
     switch (l) {
     case 0:
       fprintf(f, "CONST\t%d", INT);
+      if (inc)
+        *inc = 1;
       break;
 
     case 1:
       fprintf(f, "STRING\t%s", get_string(bf, INT));
+      if (inc)
+        *inc = 1;
       break;
 
     case 2:
       fprintf(f, "SEXP\t%s ", get_string(bf, INT));
-      fprintf(f, "%d", INT);
+      int n = INT;
+      fprintf(f, "%d", n);
+      if (dec)
+        *dec = n;
+      if (inc)
+        *inc = 1;
       break;
 
     case 3:
       fprintf(f, "STI");
+      if (dec)
+        *dec = 2;
+      if (inc)
+        *inc = 1;
       break;
 
     case 4:
       fprintf(f, "STA");
+      if (dec)
+        *dec = 2; // Take more flexible
+      if (inc)
+        *inc = 1;
       break;
 
     case 5:
@@ -142,26 +168,48 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
     case 6:
       fprintf(f, "END");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 7:
       fprintf(f, "RET");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 8:
       fprintf(f, "DROP");
+      if (dec)
+        *dec = 1;
       break;
 
     case 9:
       fprintf(f, "DUP");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 2;
       break;
 
     case 10:
       fprintf(f, "SWAP");
+      if (dec)
+        *dec = 2;
+      if (inc)
+        *inc = 2;
       break;
 
     case 11:
       fprintf(f, "ELEM");
+      if (dec)
+        *dec = 2;
+      if (inc)
+        *inc = 1;
       break;
 
     default:
@@ -169,10 +217,14 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
     }
     break;
 
+  case 4:
+    if (dec)
+      *dec += 1;
   case 2:
   case 3:
-  case 4:
     fprintf(f, "%s\t", lds[h - 2]);
+    if (inc)
+      *inc += 1;
     switch (l) {
     case 0:
       fprintf(f, "G(%d)", INT);
@@ -195,10 +247,14 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
     switch (l) {
     case 0:
       fprintf(f, "CJMPz\t0x%.8x", INT);
+      if (dec)
+        *dec = 1;
       break;
 
     case 1:
       fprintf(f, "CJMPnz\t0x%.8x", INT);
+      if (dec)
+        *dec = 1;
       break;
 
     case 2:
@@ -213,6 +269,8 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
     case 4:
       fprintf(f, "CLOSURE\t0x%.8x", INT);
+      if (inc)
+        *inc = 1;
       {
         int n = INT;
         for (int i = 0; i < n; i++) {
@@ -242,21 +300,36 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
     case 6:
       fprintf(f, "CALL\t0x%.8x ", INT);
-      fprintf(f, "%d", INT);
+      int n = INT;
+      fprintf(f, "%d", n);
+      if (dec)
+        *dec = n;
+      if (inc)
+        *inc = 1;
       break;
 
     case 7:
       fprintf(f, "TAG\t%s ", get_string(bf, INT));
       fprintf(f, "%d", INT);
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 8:
       fprintf(f, "ARRAY\t%d", INT);
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 9:
       fprintf(f, "FAIL\t%d", INT);
       fprintf(f, "%d", INT);
+      if (dec)
+        *dec = 1;
       break;
 
     case 10:
@@ -270,29 +343,53 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
   case 6:
     fprintf(f, "PATT\t%s", pats[l]);
+    if (dec)
+      *dec = 1;
+    if (inc)
+      *inc = 1;
     break;
 
   case 7: {
     switch (l) {
     case 0:
       fprintf(f, "CALL\tLread");
+      if (inc)
+        *inc = 1;
       break;
 
     case 1:
       fprintf(f, "CALL\tLwrite");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 2:
       fprintf(f, "CALL\tLlength");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
     case 3:
       fprintf(f, "CALL\tLstring");
+      if (dec)
+        *dec = 1;
+      if (inc)
+        *inc = 1;
       break;
 
-    case 4:
-      fprintf(f, "CALL\tBarray\t%d", INT);
+    case 4: {
+      int n = INT;
+      fprintf(f, "CALL\tBarray\t%d", n);
+      if (dec)
+        *dec = n;
+      if (inc)
+        *inc = 1;
       break;
+    }
 
     default:
       failure("ERROR: invalid opcode %d-%d\n", h, l);
@@ -311,7 +408,8 @@ void disassemble(FILE *f, const bytefile *const bf) {
   bytecode op;
   int pos = 0;
   do {
-    int size = disassemble_instruction(f, bf, pos, &op);
+    uint32_t inc = 0, dec = 0;
+    int size = disassemble_instruction(f, bf, pos, &op, &inc, &dec);
     if (op == STOP) {
       break;
     }

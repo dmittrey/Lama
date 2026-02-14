@@ -6,6 +6,7 @@
 
 #include "bytefile.h"
 #include "state.h"
+#include "verify_run.h"
 
 /* High nibble (h) */
 enum op_high {
@@ -1081,28 +1082,33 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  /* Load bytecode */
-  __bf = read_file(argv[1]);
-  if (!__bf) {
+  if (run_verify(argv[1]) != 0) {
+    fprintf(stderr, "Verification failed!\n");
     return 1;
   }
+
+  /* Load bytecode */
+  // __bf = read_file(argv[1]);
+  // if (!__bf) {
+  // return 1;
+  // }
 
   /* Virtual regs */
-  __ip = __bf->code_ptr;
+  // __ip = __bf->code_ptr;
 
   /* Create call stack */
-  cs_init(__bf->global_area_size);
+  // cs_init(__bf->global_area_size);
 
   /* Interpret bytecode */
-  error_code_e error_code = ERROR_NONE;
-  interpret_bc(stdout, &error_code);
-  if (error_code != ERROR_NONE && error_code != ERROR_STOP) {
-    fprintf(stderr, "Error: %d\n", error_code);
-    return 1;
-  }
+  // error_code_e error_code = ERROR_NONE;
+  // interpret_bc(stdout, &error_code);
+  // if (error_code != ERROR_NONE && error_code != ERROR_STOP) {
+  //   fprintf(stderr, "Error: %d\n", error_code);
+  //   return 1;
+  // }
 
   /* Cleanup */
-  free(__bf);
+  // free(__bf);
 
   return 0;
 }

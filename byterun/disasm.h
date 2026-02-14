@@ -74,7 +74,8 @@ typedef enum bytecode {
 } bytecode;
 
 int disassemble_instruction(FILE *f, const struct bytefile *const bf,
-                            int offset, bytecode *const ret_opcode);
+                            int offset, bytecode *const ret_opcode,
+                            uint32_t *inc, uint32_t *dec);
 
 #ifdef __cplusplus
 }
