@@ -9,56 +9,7 @@
 #include "bytefile.h"
 #include "disasm.h"
 
-void *__start_custom_data;
-void *__stop_custom_data;
-
-/* The unpacked representation of bytecode file */
-typedef struct bytefile {
-  char *string_ptr; /* A pointer to the beginning of the string table */
-  int *public_ptr;  /* A pointer to the beginning of publics table    */
-  char *code_ptr;   /* A pointer to the bytecode itself               */
-  int *global_ptr;  /* A pointer to the global area                   */
-  size_t code_size;
-  int stringtab_size;   /* The size (in bytes) of the string table        */
-  int global_area_size; /* The size (in words) of global area             */
-  int public_symbols_number; /* The number of public symbols */
-  char buffer[0];
-} bytefile;
-
 #define PUB_VAL_SIZE 2 * sizeof(uint32_t) // pos + offset
-
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
-#define BYTE *ip++
-#define STRING get_string(bf, INT)
-#define FAIL failure("ERROR: invalid opcode %d-%d\n", h, l)
-
-/* Gets a string from a string table by an index */
-char *get_string(const bytefile *const f, int pos) {
-  return &f->string_ptr[pos];
-}
-
-/* Implement bytefile.h */
-int get_public_count(const bytefile *const f) {
-  return f->public_symbols_number;
-}
-
-/* Gets a name for a public symbol */
-char *get_public_name(const bytefile *const f, int i) {
-  return get_string(f, f->public_ptr[i * 2]);
-}
-
-/* Gets an offset for a publie symbol */
-int get_public_offset(const bytefile *const f, int i) {
-  return f->public_ptr[i * 2 + 1];
-}
-
-size_t get_code_size(const bytefile *const f) { return f->code_size; }
-
-int32_t get_arg(const bytefile *const bf, int pos) {
-  char *ip = bf->code_ptr + pos;
-  (void)(BYTE); /* skip opcode byte */
-  return (int32_t)INT;
-}
 
 /*
 | stringtab_size | global_area_size | public_symbols_number |
@@ -169,11 +120,11 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
       break;
 
     case 1:
-      fprintf(f, "STRING\t%s", STRING);
+      fprintf(f, "STRING\t%s", get_string(bf, INT));
       break;
 
     case 2:
-      fprintf(f, "SEXP\t%s ", STRING);
+      fprintf(f, "SEXP\t%s ", get_string(bf, INT));
       fprintf(f, "%d", INT);
       break;
 
@@ -214,7 +165,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
       break;
 
     default:
-      FAIL;
+      failure("ERROR: invalid opcode %d-%d\n", h, l);
     }
     break;
 
@@ -236,7 +187,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
       fprintf(f, "C(%d)", INT);
       break;
     default:
-      FAIL;
+      failure("ERROR: invalid opcode %d-%d\n", h, l);
     }
     break;
 
@@ -279,7 +230,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
             fprintf(f, "C(%d)", INT);
             break;
           default:
-            FAIL;
+            failure("ERROR: invalid opcode %d-%d\n", h, l);
           }
         }
       };
@@ -295,7 +246,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
       break;
 
     case 7:
-      fprintf(f, "TAG\t%s ", STRING);
+      fprintf(f, "TAG\t%s ", get_string(bf, INT));
       fprintf(f, "%d", INT);
       break;
 
@@ -313,7 +264,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
       break;
 
     default:
-      FAIL;
+      failure("ERROR: invalid opcode %d-%d\n", h, l);
     }
     break;
 
@@ -344,12 +295,12 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
       break;
 
     default:
-      FAIL;
+      failure("ERROR: invalid opcode %d-%d\n", h, l);
     }
   } break;
 
   default:
-    FAIL;
+    failure("ERROR: invalid opcode %d-%d\n", h, l);
   }
 
   return ip - bf->code_ptr - pos;
