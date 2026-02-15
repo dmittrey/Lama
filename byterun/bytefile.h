@@ -51,6 +51,13 @@ static inline int32_t get_arg2(const bytefile *const bf, int pos) {
   (void)(INT);
   return (int32_t)INT;
 }
+static inline void set_arg2_bighalf(const bytefile *const bf, int pos,
+                                    uint16_t val) {
+  char *ip = bf->code_ptr + pos;
+  (void)(BYTE); /* skip opcode byte */
+  (void)(INT);
+  memcpy(ip, &val, sizeof(uint16_t));
+}
 static inline char *get_code_ptr(bytefile *f) { return f->code_ptr; }
 static inline int get_global_area_size(const bytefile *const f) {
   return f->global_area_size;

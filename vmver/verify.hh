@@ -54,8 +54,8 @@ update_types(std::pair<vtype_e, vtype_e> &dst,
 
 // Join rule for (stack_size, delta):
 // require equal total depth; keep larger delta (more conservative).
-static inline bool join_depth(size_t &dst_stk, uint32_t &dst_delta,
-                              size_t in_stk, uint32_t in_delta,
+static inline bool join_depth(uint16_t &dst_stk, uint32_t &dst_delta,
+                              uint16_t in_stk, uint32_t in_delta,
                               uint32_t where) {
   size_t dst_total = dst_stk + (size_t)dst_delta;
   size_t in_total = in_stk + (size_t)in_delta;
@@ -182,7 +182,7 @@ using bytefile_ptr = std::unique_ptr<bytefile, BytefileDeleter>;
 int analyse(bytefile_ptr bytefile) {
   const size_t code_size = get_code_size(bytefile.get());
   std::vector<bool> reachable(code_size, false);             // 1/8X file size
-  std::vector<size_t> stack_size(code_size, 0);              // 8X file size
+  std::vector<uint16_t> stack_size(code_size, 0);            // 2X file size
   std::vector<uint32_t> delta_size(code_size, 0);            // 4X file size
   std::vector<uint32_t> workset;                             // 4X file size
   std::vector<std::pair<vtype_e, vtype_e>> types(code_size); //(top, second)
@@ -219,6 +219,11 @@ int analyse(bytefile_ptr bytefile) {
     int len_ret = disassemble_instruction(
         stdin, bytefile.get(), static_cast<int>(offset), &op, &inc, &dec);
     validate(len_ret > 0, "Invalid instruction length", offset);
+
+    if (op == CBEGIN || op == BEGIN) {
+      // fprintf(stderr, "%x: %hu\n", offset, stack_size[offset]);
+      set_arg2_bighalf(bytefile.get(), offset, stack_size[offset]);
+    }
 
     // Bounds in code segment
     uint32_t length = static_cast<uint32_t>(len_ret);
