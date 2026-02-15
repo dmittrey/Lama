@@ -346,7 +346,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
   case 6:
     fprintf(f, "PATT\t%s", pats[l]);
     if (dec)
-      *dec = 1;
+      *dec = (l == 0) ? 2 : 1; /* Patt =str (60) takes 2 operands */
     if (inc)
       *inc = 1;
     break;
