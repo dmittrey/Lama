@@ -1115,15 +1115,18 @@ int main(int argc, char *argv[]) {
 
 // Done
 /*
-- Stack size propagation in Basic Block
-- Stack size propagation in with JMP, CJMPz, CJMPnz, CALLC, CALL
+- Stack size check in Basic Block
+- Stack size check in with JMP, CJMPz, CJMPnz, CALL
+- JMP, CJMPz, CJMPnz, CALL target bounds
 */
 
 // TODO
 /*
+- CLOSURE + CALLC Stack size check
+- CLOSURE + CALLC target bounds
+- STA/STI
 - Убрать из validate std::to_string
 - Проверка что взяли в String строку с валидным id
-- STA/STI
 - Проверка выхода за граница кода с помощью jmp, call и проч.
 - Проверка выхода за границы кода в процессе обхода
 - ERROR_OPND_STACK_UNDERFLOW, ERROR_STACK_UNDERFLOW
