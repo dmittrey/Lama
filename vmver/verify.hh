@@ -264,6 +264,11 @@ int analyse(bytefile_ptr bytefile) {
     std::pair<vtype_e, vtype_e> in_types = types[offset];
     std::pair<vtype_e, vtype_e> out_types = compute_out_types(op, in_types);
 
+    if (op == STRING) {
+      int32_t idx = get_arg(bytefile.get(), offset);
+      validate(idx >= 0 && idx < bytefile.get()->stringtab_size,
+               "STRING index out of string table bounds", offset);
+    }
     if (op == STI) {
       vtype_e t_sec = types[offset].second;
 

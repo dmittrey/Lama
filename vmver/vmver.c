@@ -1118,12 +1118,12 @@ int main(int argc, char *argv[]) {
 - JMP, CJMPz, CJMPnz, CALL target bounds
 - CLOSURE + CALLC target bounds
 - ERROR_OPND_STACK_UNDERFLOW, ERROR_STACK_UNDERFLOW
+- Проверка что взяли в String строку с валидным id
 */
 
 // TODO
 /*
 - Убрать из validate std::to_string
-- Проверка что взяли в String строку с валидным id
 - Проверка выхода за граница кода с помощью jmp, call и проч.
 - Проверка выхода за границы кода в процессе обхода
 - ERROR_GLOB_IDX_NEGATIVE, ERROR_GLOB_IDX_OUT_OF_RANGE
