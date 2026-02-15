@@ -337,19 +337,11 @@ static error_code_e callstack_set_arg(uint32_t index, csval_t value) {
   return __cs_slot_write(base + index, value);
 }
 static error_code_e callstack_get_glob(uint32_t index, csval_t *ret) {
-  uint32_t nglobals_ = __cs_nglob;
-  if (index >= nglobals_)
-    return ERROR_GLOB_IDX_OUT_OF_RANGE;
-
   size_t base = __cs_globs_base_idx();
   *ret = __cs_slot_read(base + index);
   return ERROR_NONE;
 }
 static error_code_e callstack_set_glob(uint32_t index, csval_t value) {
-  uint32_t nglobals_ = __cs_nglob;
-  if (index >= nglobals_)
-    return ERROR_GLOB_IDX_OUT_OF_RANGE;
-
   size_t base = __cs_globs_base_idx();
   return __cs_slot_write(base + index, value);
 }
@@ -406,11 +398,6 @@ static error_code_e callstack_get_arg_addr(uint32_t index, csval_t *ret) {
   return ERROR_NONE;
 }
 static error_code_e callstack_get_glob_addr(uint32_t index, csval_t *ret) {
-  uint32_t nglob_ = __cs_nglob;
-  if (index >= nglob_) {
-    return ERROR_GLOB_IDX_OUT_OF_RANGE;
-  }
-
   size_t slot_off = __cs_globs_base_idx() + index;
   *ret = csval_intern(slot_off);
   return ERROR_NONE;

@@ -1119,11 +1119,11 @@ int main(int argc, char *argv[]) {
 - CLOSURE + CALLC target bounds
 - ERROR_OPND_STACK_UNDERFLOW, ERROR_STACK_UNDERFLOW
 - Проверка что взяли в String строку с валидным id
+- ERROR_GLOB_IDX_NEGATIVE, ERROR_GLOB_IDX_OUT_OF_RANGE
 */
 
 // TODO
 /*
 - Убрать из validate std::to_string
-- ERROR_GLOB_IDX_NEGATIVE, ERROR_GLOB_IDX_OUT_OF_RANGE
 - ERROR_NARGS_MISMATCH
 */
