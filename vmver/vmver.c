@@ -1124,8 +1124,6 @@ int main(int argc, char *argv[]) {
 // TODO
 /*
 - Убрать из validate std::to_string
-- Проверка выхода за граница кода с помощью jmp, call и проч.
-- Проверка выхода за границы кода в процессе обхода
 - ERROR_GLOB_IDX_NEGATIVE, ERROR_GLOB_IDX_OUT_OF_RANGE
 - ERROR_NARGS_MISMATCH
 */
