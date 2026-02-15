@@ -21,9 +21,7 @@ static inline bool is_jump(bytecode op) noexcept {
   return op == JMP || op == CJMPZ || op == CJMPNZ;
 }
 
-static inline bool is_call(bytecode op) noexcept {
-  return op == CALL || op == CALLC;
-}
+static inline bool is_call(bytecode op) noexcept { return op == CALL; }
 
 static inline bool is_terminal(bytecode op) noexcept {
   return op == JMP || op == END || op == RET || op == FAIL || op == STOP;
@@ -81,6 +79,24 @@ int analyse(bytefile_ptr bytefile) {
 
     //  Calc stack size for next bytecode
     uint32_t stk_at_next = stk_at_entry + inc - dec;
+
+    if (is_jump(op) || is_call(op)) {
+      int32_t target_i = get_arg(bytefile.get(), offset);
+      uint32_t target = static_cast<uint32_t>(target_i);
+      validate(target_i >= 0 && static_cast<size_t>(target_i) < code_size,
+               "Invalid jump/call destination", offset);
+      size_t expected_at_target =
+          is_call(op) ? static_cast<size_t>(dec) : stk_at_next;
+
+      if (!reachable.at(target)) {
+        stack_size[target] = expected_at_target;
+        reachable[target] = true;
+        workset.push_back(target);
+      } else {
+        validate(stack_size[target] == expected_at_target,
+                 "Callee stack size not match with caller!", target);
+      }
+    }
 
     // Check stk size propagation in basic block
     if (!is_terminal(op)) {
