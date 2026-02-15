@@ -325,8 +325,8 @@ static error_code_e op_sexp(FILE *f, char l) {
   }
   r->tag = UNBOX(th);
 
-  RETURN_IF_ERROR(callstack_pop_n_operands(
-      (uint32_t)arity)); // Shrink bottom n operands used before
+  callstack_pop_n_operands(
+      (uint32_t)arity); // Shrink bottom n operands used before
   RETURN_IF_ERROR(
       callstack_push_operand(csval_extern((aint *)((data *)r)->contents)));
   return ERROR_NONE;
@@ -374,7 +374,7 @@ static error_code_e op_sta(FILE *f, char l) {
 static error_code_e op_jmp(FILE *f, char l) {
   int offset = bc_read_int();
   DBG("JMP\t0x%.8x", offset);
-  RETURN_IF_ERROR(ip_jmp(offset));
+  ip_jmp(offset);
   return ERROR_NONE;
 }
 
@@ -392,7 +392,7 @@ static error_code_e op_end(FILE *f, char l) {
     RETURN_IF_ERROR(callstack_pop_operand(NULL));
   RETURN_IF_ERROR(
       callstack_push_operand(callee_ret)); // Put retval on caller stack
-  RETURN_IF_ERROR(ip_jmp(ret_off));
+  ip_jmp(ret_off);
   return ERROR_NONE;
 }
 
@@ -440,10 +440,9 @@ static error_code_e op_elem(FILE *f, char l) {
 }
 
 static error_code_e op_ld_g(FILE *f, char l) {
-  csval_t val;
   int index = bc_read_int();
   DBG("LD\tG(%d)", index);
-  RETURN_IF_ERROR(callstack_get_glob(index, &val));
+  csval_t val = callstack_get_glob(index);
   RETURN_IF_ERROR(callstack_push_operand(val));
   return ERROR_NONE;
 }
@@ -526,7 +525,7 @@ static error_code_e op_st_g(FILE *f, char l) {
   int index = bc_read_int();
   DBG("ST\tG(%d)", index);
   RETURN_IF_ERROR(callstack_pop_operand(&val));
-  RETURN_IF_ERROR(callstack_set_glob(index, val));
+  callstack_set_glob(index, val);
   RETURN_IF_ERROR(callstack_push_operand(val)); /* Push back onto stack */
   return ERROR_NONE;
 }
@@ -580,7 +579,7 @@ static error_code_e op_cjmpz(FILE *f, char l) {
   RETURN_IF_ERROR(csval_to_imm_aint(val, &cond));
 
   if (!UNBOX(cond))
-    RETURN_IF_ERROR(ip_jmp(l_offset));
+    ip_jmp(l_offset);
   return ERROR_NONE;
 }
 
@@ -593,7 +592,7 @@ static error_code_e op_cjmpnz(FILE *f, char l) {
   RETURN_IF_ERROR(csval_to_imm_aint(val, &cond));
 
   if (UNBOX(cond))
-    RETURN_IF_ERROR(ip_jmp(l_offset));
+    ip_jmp(l_offset);
   return ERROR_NONE;
 }
 
@@ -628,8 +627,7 @@ static error_code_e op_closure(FILE *f, char l) {
     case OP_L_G: {
       uint32_t index = bc_read_int();
       DBG(" G(%d)", index);
-      csval_t v_val;
-      RETURN_IF_ERROR(callstack_get_glob(index, &v_val));
+      csval_t v_val = callstack_get_glob(index);
       ((aint *)r->contents)[i + 1] = csval_to_aint(v_val);
     } break;
 
@@ -687,7 +685,7 @@ static error_code_e op_callc(FILE *f, char l) {
 
   DBG("CALLC\t%d", n);
   RETURN_IF_ERROR(cs_push_cframe(clos, ret_off, (uint32_t)n));
-  RETURN_IF_ERROR(ip_jmp((int32_t)((char *)entry - ip_base())));
+  ip_jmp((int32_t)((char *)entry - ip_base()));
   return ERROR_NONE;
 }
 
@@ -696,7 +694,7 @@ static error_code_e op_call(FILE *f, char l) {
   int nargs = bc_read_int();
   DBG("CALL\t0x%.8x %d", offset, nargs);
   RETURN_IF_ERROR(cs_push_frame(ip_offset(), (uint32_t)nargs));
-  RETURN_IF_ERROR(ip_jmp(offset));
+  ip_jmp(offset);
   return ERROR_NONE;
 }
 
@@ -880,8 +878,8 @@ static error_code_e op_call_barray(FILE *f, char l) {
     ((aint *)r->contents)[i] = csval_to_aint(v);
   }
 
-  RETURN_IF_ERROR(callstack_pop_n_operands(
-      (uint32_t)size)); // Shrink bottom n operands used before
+  callstack_pop_n_operands(
+      (uint32_t)size); // Shrink bottom n operands used before
   RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r->contents)));
   return ERROR_NONE;
 }

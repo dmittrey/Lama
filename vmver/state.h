@@ -17,10 +17,7 @@ extern bytefile *__bf;
 char *ip_base() { return __bf->code_ptr; }
 uint32_t ip_offset() { return __ip - __bf->code_ptr; }
 static inline char *ip_end() { return __bf->code_ptr + __bf->code_size; }
-error_code_e ip_jmp(int32_t offset) {
-  __ip = ip_base() + offset;
-  return ERROR_NONE;
-}
+void ip_jmp(int32_t offset) { __ip = ip_base() + offset; }
 
 /* Bytecode */
 int32_t bc_read_int() {

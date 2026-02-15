@@ -76,12 +76,11 @@ extern size_t __cs_nglob;   /* number of globals */
 static inline size_t __csval_slot_to_ram_idx(size_t slot) {
   return slot * (size_t)CSVAL_WORDS;
 }
-static inline error_code_e __cs_slot_write(size_t slot, csval_t v) {
+static inline void __cs_slot_write(size_t slot, csval_t v) {
   size_t w = __csval_slot_to_ram_idx(slot);
   aint *ram = (aint *)__gc_stack_top;
   ram[w] = BOX((aint)v.ty); /* to skip during GC scan */
   ram[w + 1] = v.val;
-  return ERROR_NONE;
 }
 static inline csval_t __cs_slot_read(size_t slot) {
   size_t w = __csval_slot_to_ram_idx(slot);
@@ -91,8 +90,8 @@ static inline csval_t __cs_slot_read(size_t slot) {
 }
 
 /* Link with csval interface */
-static inline error_code_e __cs_write_imm(size_t slot, uint32_t value) {
-  return __cs_slot_write(slot, csval_imm(value));
+static inline void __cs_write_imm(size_t slot, uint32_t value) {
+  __cs_slot_write(slot, csval_imm(value));
 }
 static inline error_code_e __cs_read_imm_slot(size_t slot, uint32_t *out) {
   csval_t v = __cs_slot_read(slot);
@@ -143,7 +142,7 @@ static inline error_code_e __cs_ensure_capacity(size_t required_slots) {
 }
 static inline error_code_e __cs_push_slot(csval_t v) {
   RETURN_IF_ERROR(__cs_ensure_capacity(__cs_sp_slots() + 1));
-  RETURN_IF_ERROR(__cs_slot_write(__cs_sp_slots(), v));
+  __cs_slot_write(__cs_sp_slots(), v);
   __cs_sp_add(1);
   return ERROR_NONE;
 }
@@ -317,7 +316,8 @@ static error_code_e callstack_set_local(uint32_t index, csval_t value) {
     return ERROR_LOCL_IDX_OUT_OF_RANGE;
 
   size_t base = __cs_locs_base_idx();
-  return __cs_slot_write(base + index, value);
+  __cs_slot_write(base + index, value);
+  return ERROR_NONE;
 }
 static error_code_e callstack_get_arg(uint32_t index, csval_t *ret) {
   uint32_t nargs_ = cs_nargs();
@@ -334,40 +334,38 @@ static error_code_e callstack_set_arg(uint32_t index, csval_t value) {
     return ERROR_ARG_IDX_OUT_OF_RANGE;
 
   size_t base = __cs_args_base_idx();
-  return __cs_slot_write(base + index, value);
-}
-static error_code_e callstack_get_glob(uint32_t index, csval_t *ret) {
-  size_t base = __cs_globs_base_idx();
-  *ret = __cs_slot_read(base + index);
+  __cs_slot_write(base + index, value);
   return ERROR_NONE;
 }
-static error_code_e callstack_set_glob(uint32_t index, csval_t value) {
+static csval_t callstack_get_glob(uint32_t index) {
   size_t base = __cs_globs_base_idx();
-  return __cs_slot_write(base + index, value);
+  return __cs_slot_read(base + index);
+}
+static void callstack_set_glob(uint32_t index, csval_t value) {
+  size_t base = __cs_globs_base_idx();
+  __cs_slot_write(base + index, value);
 }
 
 /* Operands stack */
 static error_code_e callstack_pop_operand(csval_t *ret) {
   uint32_t noperands_ = __cs_noperands();
   RETURN_IF_ERROR(__cs_pop_slot(ret));
-  RETURN_IF_ERROR(__cs_write_imm(__cs_noperands_base_idx(), noperands_ - 1));
+  __cs_write_imm(__cs_noperands_base_idx(), noperands_ - 1);
   return ERROR_NONE;
 }
 static error_code_e callstack_push_operand(csval_t value) {
   uint32_t noperands_ = __cs_noperands();
   RETURN_IF_ERROR(__cs_push_slot(value));
-  RETURN_IF_ERROR(__cs_write_imm(__cs_noperands_base_idx(), noperands_ + 1));
+  __cs_write_imm(__cs_noperands_base_idx(), noperands_ + 1);
   return ERROR_NONE;
 }
-static error_code_e callstack_pop_n_operands(uint32_t n) {
+static void callstack_pop_n_operands(uint32_t n) {
   uint32_t noperands_ = __cs_noperands();
 
   // Update noperands
-  RETURN_IF_ERROR(__cs_write_imm(__cs_noperands_base_idx(), noperands_ - n));
+  __cs_write_imm(__cs_noperands_base_idx(), noperands_ - n);
 
   __cs_sp_sub(n);
-
-  return ERROR_NONE;
 }
 static csval_t callstack_operands_tail_ref(uint32_t n) {
   size_t base = __cs_operands_base_idx();
