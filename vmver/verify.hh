@@ -85,6 +85,7 @@ int analyse(bytefile_ptr bytefile) {
     uint32_t stk_at_next = stk_at_entry + inc - dec;
 
     /*
+    try#1
       Closure:
       1. У нас всегда будет хранится для каждой точки куда будет вести callc
       target
@@ -94,29 +95,24 @@ int analyse(bytefile_ptr bytefile) {
       1. Если встретили callc, то нам нужно взять для текущей ноды callc_target
       и для него посчитать глубины как для is_jump
       2. Для следующей ноды поставить предыдущий callc target
+    try#2
+    Проблема того, что нужно держать очередь closures для конкретной ноды
+    кажется критичной(ну то есть уходим от статики)
+
+    Решил отказаться от моделирования стека замыканий и чекаю только bounds
+    перехода
+    +
+    Для callc чекаем что глубина корректна для след ноды
+
+    p.s. Возможно можно индексировать массив точек куда ведет хоть какая-то
+    closure и при callc пробегаться и смотреть инвариант что наш stack_size >=
+    минимальному stack_size среди всех closure, но это такое
       */
     if (is_closure(op)) {
       int32_t target_i = get_arg(bytefile.get(), offset);
       uint32_t target = static_cast<uint32_t>(target_i);
       validate(target_i >= 0 && static_cast<size_t>(target_i) < code_size,
                "Invalid closure destination", offset);
-
-      callc_target.push(target);
-    }
-    if (is_callc(op)) {
-      validate(!callc_target.empty(), "CALLC without matching CLOSURE!", offset);
-      size_t expected_at_target = stk_at_entry;
-      uint32_t target = callc_target.top();
-      callc_target.pop();
-
-      if (!reachable.at(target)) {
-        stack_size[target] = expected_at_target;
-        reachable[target] = true;
-        workset.push_back(target);
-      } else {
-        validate(stack_size[target] == expected_at_target,
-                 "Closure callee stack size not match with caller!", target);
-      }
     }
 
     if (is_jump(op) || is_call(op)) {

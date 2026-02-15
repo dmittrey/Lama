@@ -1118,12 +1118,11 @@ int main(int argc, char *argv[]) {
 - Stack size check in Basic Block
 - Stack size check in with JMP, CJMPz, CJMPnz, CALL
 - JMP, CJMPz, CJMPnz, CALL target bounds
+- CLOSURE + CALLC target bounds
 */
 
 // TODO
 /*
-- CLOSURE + CALLC Stack size check
-- CLOSURE + CALLC target bounds
 - STA/STI
 - Убрать из validate std::to_string
 - Проверка что взяли в String строку с валидным id
