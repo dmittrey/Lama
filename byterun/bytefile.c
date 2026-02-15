@@ -158,10 +158,6 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
     case 4:
       fprintf(f, "STA");
-      if (dec)
-        *dec = 2; // Take more flexible
-      if (inc)
-        *inc = 1;
       break;
 
     case 5:
