@@ -38,10 +38,6 @@ char bc_read_byte() {
 const char *bc_read_string() {
   int32_t idx = bc_read_int();
   const char *s = get_string(__bf, idx);
-  if (!s) {
-    failure("bytecode: null string at index %d (ip_off=%lu)\n", idx,
-            (unsigned long)ip_offset());
-  }
   return s;
 }
 
