@@ -148,9 +148,6 @@ static inline error_code_e __cs_push_slot(csval_t v) {
   return ERROR_NONE;
 }
 static inline error_code_e __cs_pop_slot(csval_t *ret) {
-  if (__cs_sp_slots() == 0) {
-    return ERROR_OPND_STACK_UNDERFLOW;
-  }
   __cs_sp_sub(1);
   if (!ret)
     return ERROR_NONE; // To not stubbing ret container
@@ -275,9 +272,6 @@ static error_code_e cs_alloc_locals(uint32_t nlocals) {
   return ERROR_NONE;
 }
 static error_code_e cs_pop_frame(uint32_t *ret_off) {
-  if (!__cs_nframes)
-    return ERROR_STACK_UNDERFLOW;
-
   /* Epilog */
   __cs_sp_set(__cs_fp);
   csval_t prev_fp_val;
@@ -363,9 +357,6 @@ static error_code_e callstack_set_glob(uint32_t index, csval_t value) {
 /* Operands stack */
 static error_code_e callstack_pop_operand(csval_t *ret) {
   uint32_t noperands_ = __cs_noperands();
-  if (noperands_ == 0)
-    return ERROR_OPND_STACK_UNDERFLOW;
-
   RETURN_IF_ERROR(__cs_pop_slot(ret));
   RETURN_IF_ERROR(__cs_write_imm(__cs_noperands_base_idx(), noperands_ - 1));
   return ERROR_NONE;
@@ -378,14 +369,9 @@ static error_code_e callstack_push_operand(csval_t value) {
 }
 static error_code_e callstack_pop_n_operands(uint32_t n) {
   uint32_t noperands_ = __cs_noperands();
-  if (noperands_ < n)
-    return ERROR_OPND_STACK_UNDERFLOW;
 
   // Update noperands
   RETURN_IF_ERROR(__cs_write_imm(__cs_noperands_base_idx(), noperands_ - n));
-  if (__cs_sp_slots() < n) {
-    return ERROR_STACK_UNDERFLOW;
-  }
 
   __cs_sp_sub(n);
 
@@ -437,9 +423,6 @@ static error_code_e csval_to_ref_aintp(csval_t val, aint **ret) {
     return ERROR_NONE;
   case CS_INTERNAL_REF: {
     size_t slot = (size_t)UNBOX(val.val);
-    if (slot >= __cs_cap) {
-      return ERROR_STACK_UNDERFLOW;
-    }
     *ret = &((aint *)__gc_stack_top)[__csval_slot_to_ram_idx(slot)];
     return ERROR_NONE;
   }

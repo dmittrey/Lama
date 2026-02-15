@@ -599,7 +599,7 @@ static error_code_e op_cjmpnz(FILE *f, char l) {
 
 static error_code_e op_begin(FILE *f, char l) {
   int nargs = bc_read_int();
-  int nlocals = bc_read_int();
+  int nlocals = bc_read_int(); // TODO
   if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
     failure("BEGIN:\t nargs mismatch: exp: %d act: %d\n", cs_nargs(), nargs);
     return ERROR_NARGS_MISMATCH;
@@ -611,7 +611,7 @@ static error_code_e op_begin(FILE *f, char l) {
 
 static error_code_e op_cbegin(FILE *f, char l) {
   int nargs = bc_read_int();
-  int nlocals = bc_read_int();
+  int nlocals = bc_read_int(); // TODO
   if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
     failure("CBEGIN:\t nargs mismatch: exp: %d act: %d\n", cs_nargs(), nargs);
     return ERROR_NARGS_MISMATCH;
@@ -877,9 +877,6 @@ static error_code_e op_call_lstring(FILE *f, char l) {
 static error_code_e op_call_barray(FILE *f, char l) {
   int size = bc_read_int();
   DBG("CALL\tBarray\t%d", size);
-  if (size < 0) {
-    return ERROR_STACK_UNDERFLOW;
-  }
   if (size == 0) {
     void *r = Barray(NULL, BOX(0));
     RETURN_IF_ERROR(callstack_push_operand(csval_extern((aint *)r)));
@@ -1119,6 +1116,7 @@ int main(int argc, char *argv[]) {
 - Stack size check in with JMP, CJMPz, CJMPnz, CALL
 - JMP, CJMPz, CJMPnz, CALL target bounds
 - CLOSURE + CALLC target bounds
+- ERROR_OPND_STACK_UNDERFLOW, ERROR_STACK_UNDERFLOW
 */
 
 // TODO
@@ -1128,7 +1126,6 @@ int main(int argc, char *argv[]) {
 - Проверка что взяли в String строку с валидным id
 - Проверка выхода за граница кода с помощью jmp, call и проч.
 - Проверка выхода за границы кода в процессе обхода
-- ERROR_OPND_STACK_UNDERFLOW, ERROR_STACK_UNDERFLOW
 - ERROR_GLOB_IDX_NEGATIVE, ERROR_GLOB_IDX_OUT_OF_RANGE
 - ERROR_NARGS_MISMATCH
 */
