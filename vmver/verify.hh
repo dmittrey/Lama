@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <memory>
+#include <stack>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,6 +24,10 @@ static inline bool is_jump(bytecode op) noexcept {
 
 static inline bool is_call(bytecode op) noexcept { return op == CALL; }
 
+static inline bool is_closure(bytecode op) noexcept { return op == CLOSURE; }
+
+static inline bool is_callc(bytecode op) noexcept { return op == CALLC; }
+
 static inline bool is_terminal(bytecode op) noexcept {
   return op == JMP || op == END || op == RET || op == FAIL || op == STOP;
 }
@@ -35,10 +40,10 @@ using bytefile_ptr = std::unique_ptr<bytefile, BytefileDeleter>;
 int analyse(bytefile_ptr bytefile) {
   // fprintf(stderr, "Verification!\n");
   const size_t code_size = get_code_size(bytefile.get());
-  std::vector<bool> reachable(code_size, false);    // 1/8X file size
-  std::vector<bool> jump_targets(code_size, false); // 1/8X file size
-  std::vector<size_t> stack_size(code_size, 0);     // 8X file size
-  std::vector<uint32_t> workset;                    // 4X file size
+  std::vector<bool> reachable(code_size, false); // 1/8X file size
+  std::vector<size_t> stack_size(code_size, 0);  // 8X file size
+  std::stack<uint32_t> callc_target;             // 4X file size
+  std::vector<uint32_t> workset;                 // 4X file size
   // Summary 12.25X file size
 
   // O(n), n - public symbols
@@ -48,7 +53,6 @@ int analyse(bytefile_ptr bytefile) {
     validate(sym_offset < code_size, "Invalid symbol offset!", sym_offset);
     if (!reachable.at(sym_offset)) {
       reachable[sym_offset] = true;
-      jump_targets[sym_offset] = true;
       stack_size[sym_offset] = 0; // На старте stack size = 0
       workset.push_back(sym_offset);
     } else {
@@ -79,6 +83,41 @@ int analyse(bytefile_ptr bytefile) {
 
     //  Calc stack size for next bytecode
     uint32_t stk_at_next = stk_at_entry + inc - dec;
+
+    /*
+      Closure:
+      1. У нас всегда будет хранится для каждой точки куда будет вести callc
+      target
+      2. Если мы видим closure то на след шаге изменим callc target на новый
+
+      Callc:
+      1. Если встретили callc, то нам нужно взять для текущей ноды callc_target
+      и для него посчитать глубины как для is_jump
+      2. Для следующей ноды поставить предыдущий callc target
+      */
+    if (is_closure(op)) {
+      int32_t target_i = get_arg(bytefile.get(), offset);
+      uint32_t target = static_cast<uint32_t>(target_i);
+      validate(target_i >= 0 && static_cast<size_t>(target_i) < code_size,
+               "Invalid closure destination", offset);
+
+      callc_target.push(target);
+    }
+    if (is_callc(op)) {
+      validate(!callc_target.empty(), "CALLC without matching CLOSURE!", offset);
+      size_t expected_at_target = stk_at_entry;
+      uint32_t target = callc_target.top();
+      callc_target.pop();
+
+      if (!reachable.at(target)) {
+        stack_size[target] = expected_at_target;
+        reachable[target] = true;
+        workset.push_back(target);
+      } else {
+        validate(stack_size[target] == expected_at_target,
+                 "Closure callee stack size not match with caller!", target);
+      }
+    }
 
     if (is_jump(op) || is_call(op)) {
       int32_t target_i = get_arg(bytefile.get(), offset);

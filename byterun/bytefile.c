@@ -296,9 +296,14 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
       };
       break;
 
-    case 5:
-      fprintf(f, "CALLC\t%d", INT);
-      break;
+    case 5: {
+      int n = INT;
+      fprintf(f, "CALLC\t%d", n);
+      if (dec)
+        *dec = n + 1;
+      if (inc)
+        *inc = 1;
+    } break;
 
     case 6:
       fprintf(f, "CALL\t0x%.8x ", INT);
