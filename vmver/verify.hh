@@ -320,6 +320,9 @@ int analyse(bytefile_ptr bytefile) {
       uint32_t target = static_cast<uint32_t>(target_i);
       validate(target_i >= 0 && static_cast<size_t>(target_i) < code_size,
                "Invalid closure destination", offset);
+
+      int32_t nvars = get_arg2(bytefile.get(), offset);
+      validate(nvars >= 0, "Closure nvars < 0", offset);
     }
 
     if (is_jump(op) || is_call(op)) {

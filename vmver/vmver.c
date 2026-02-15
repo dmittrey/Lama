@@ -618,10 +618,6 @@ static error_code_e op_closure(FILE *f, char l) {
   DBG("CLOSURE\t0x%.8x", l_offset);
 
   int n = bc_read_int();
-  if (n < 0) {
-    return ERROR_INVALID_CAPTURE_TYPE;
-  }
-
   data *r = (data *)alloc_closure((uint32_t)n + 1);
   push_extra_root((void **)&r);
 
@@ -665,7 +661,7 @@ static error_code_e op_closure(FILE *f, char l) {
     } break;
 
     default:
-      return ERROR_INVALID_CAPTURE_TYPE;
+      break;
     }
   }
 
@@ -1117,5 +1113,4 @@ int main(int argc, char *argv[]) {
 // TODO
 /*
 - Убрать из validate std::to_string
-- ERROR_NARGS_MISMATCH
 */

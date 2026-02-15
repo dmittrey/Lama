@@ -13,7 +13,6 @@ typedef enum error_code_e {
   ERROR_NOT_IMM = 12,
   ERROR_NOT_REF = 13,
   ERROR_NOT_VALID_CLOSURE = 14,
-  ERROR_INVALID_CAPTURE_TYPE = 17,
   ERROR_NO_CLOSURE_IN_CURRENT_FRAME = 18,
 } error_code_e;
 
