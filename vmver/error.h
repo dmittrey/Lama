@@ -15,7 +15,6 @@ typedef enum error_code_e {
   ERROR_NOT_VALID_CLOSURE = 14,
   ERROR_INVALID_CAPTURE_TYPE = 17,
   ERROR_NO_CLOSURE_IN_CURRENT_FRAME = 18,
-  ERROR_NARGS_MISMATCH = 19,
 } error_code_e;
 
 #define RETURN_IF_ERROR(expr)                                                  \

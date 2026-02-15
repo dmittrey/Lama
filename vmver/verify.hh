@@ -330,6 +330,21 @@ int analyse(bytefile_ptr bytefile) {
       size_t expected_at_target =
           is_call(op) ? static_cast<size_t>(dec) : stk_at_next;
 
+      if (is_call(op)) {
+        bytecode nop;
+        int len_ret = disassemble_instruction(
+            stdin, bytefile.get(), static_cast<int>(target), &nop, NULL, NULL);
+        validate(nop == BEGIN, "Call not transfer to begin/end section!",
+                 offset);
+
+        int32_t begin_args_cnt =
+            get_arg(bytefile.get(), static_cast<int>(target));
+        int32_t call_args_cnt =
+            get_arg2(bytefile.get(), static_cast<int>(offset));
+        validate(begin_args_cnt == call_args_cnt,
+                 "Call and begin args count not match!", offset);
+      }
+
       if (!reachable.at(target)) {
         reachable[target] = true;
         stack_size[target] = expected_at_target;

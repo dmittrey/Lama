@@ -600,10 +600,6 @@ static error_code_e op_cjmpnz(FILE *f, char l) {
 static error_code_e op_begin(FILE *f, char l) {
   int nargs = bc_read_int();
   int nlocals = bc_read_int(); // TODO
-  if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
-    failure("BEGIN:\t nargs mismatch: exp: %d act: %d\n", cs_nargs(), nargs);
-    return ERROR_NARGS_MISMATCH;
-  }
   DBG("BEGIN\t%d %d", nargs, nlocals);
   RETURN_IF_ERROR(cs_alloc_locals(nlocals));
   return ERROR_NONE;
@@ -612,10 +608,6 @@ static error_code_e op_begin(FILE *f, char l) {
 static error_code_e op_cbegin(FILE *f, char l) {
   int nargs = bc_read_int();
   int nlocals = bc_read_int(); // TODO
-  if ((uint32_t)nargs != (uint32_t)cs_nargs()) {
-    failure("CBEGIN:\t nargs mismatch: exp: %d act: %d\n", cs_nargs(), nargs);
-    return ERROR_NARGS_MISMATCH;
-  }
   DBG("CBEGIN\t%d\t%d", nargs, nlocals);
   RETURN_IF_ERROR(cs_alloc_locals((uint32_t)nlocals));
   return ERROR_NONE;
