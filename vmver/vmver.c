@@ -602,7 +602,7 @@ static error_code_e op_begin(FILE *f, char l) {
   int nlocals = (int)(raw & 0xFFFF);
   int sdep = (int)((raw >> 16) & 0xFFFF);
   DBG("BEGIN\t%d %d", nargs, nlocals);
-  RETURN_IF_ERROR(cs_alloc_locals(nlocals));
+  RETURN_IF_ERROR(cs_alloc_locals((uint32_t)nlocals, (uint32_t)sdep));
   return ERROR_NONE;
 }
 
@@ -612,7 +612,7 @@ static error_code_e op_cbegin(FILE *f, char l) {
   int nlocals = (int)(raw & 0xFFFF);
   int sdep = (int)((raw >> 16) & 0xFFFF);
   DBG("CBEGIN\t%d\t%d", nargs, nlocals);
-  RETURN_IF_ERROR(cs_alloc_locals((uint32_t)nlocals));
+  RETURN_IF_ERROR(cs_alloc_locals((uint32_t)nlocals, (uint32_t)sdep));
   return ERROR_NONE;
 }
 

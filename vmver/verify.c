@@ -3,6 +3,7 @@
 
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -283,6 +284,8 @@ int verify(bytefile *bytefile) {
     if (!reachable[sym_offset]) {
       reachable[sym_offset] = true;
       stack_size[sym_offset] = 0; // На старте stack size = 0
+      func_of[sym_offset] = sym_offset;
+      max_depth[sym_offset] = 0;
       delta_size[sym_offset] = 0;
       types[sym_offset] = (struct stdump){.top = NDEF, .sec = NDEF};
       __ws_push(sym_offset);
@@ -332,11 +335,6 @@ int verify(bytefile *bytefile) {
       return 1;
     }
 
-    if (op == CBEGIN || op == BEGIN) {
-      // fprintf(stderr, "%x: %hu\n", offset, stack_size[offset]);
-      set_arg2_bighalf(bytefile, offset, stack_size[offset]);
-    }
-
     // Bounds in code segment
     if (offset + length > code_size) {
       fprintf(stderr, "%x: Unexpected end of code!", offset + length);
@@ -349,6 +347,15 @@ int verify(bytefile *bytefile) {
 
     sdepth stk_at_next = stk_at_entry + inc - dec;
     sdepth delta_at_next = delta_entry;
+
+    sdepth total_in = (sdepth)(stk_at_entry + delta_entry);
+    sdepth peak_here = (sdepth)(total_in + inc);
+    if (peak_here > max_depth[f]) {
+      max_depth[f] = peak_here;
+      if (write_sdep_at_entry(bytefile, f, max_depth[f])) {
+        return 1;
+      }
+    }
 
     stdump out_types;
     compute_out_types(op, types[offset], &out_types);
@@ -490,10 +497,14 @@ int verify(bytefile *bytefile) {
         reachable[target] = true;
         stack_size[target] = expected_at_target;
         delta_size[target] = delta_at_next;
+        if (propagate_func(func_of, target, (op == CALL) ? target : f))
+          return 1;
         if (types[target].top == NDEF && types[target].sec == NDEF)
           types[target] = (struct stdump){.top = UNKNOWN, .sec = UNKNOWN};
         __ws_push(target);
       } else {
+        if (propagate_func(func_of, target, (op == CALL) ? target : f))
+          return 1;
         if (op == CALL) {
           // CALL targets must be exact and delta-free
           if (delta_size[target] != 0 || delta_at_next != 0) {
@@ -528,8 +539,12 @@ int verify(bytefile *bytefile) {
         stack_size[next_offset] = (size_t)stk_at_next;
         delta_size[next_offset] = delta_at_next;
         types[next_offset] = out_types;
+        if (propagate_func(func_of, next_offset, f))
+          return 1;
         __ws_push(next_offset);
       } else {
+        if (propagate_func(func_of, next_offset, f))
+          return 1;
         bool depth_changed;
         if (join_depth(&stack_size[next_offset], &delta_size[next_offset],
                        (size_t)stk_at_next, delta_at_next, next_offset,

@@ -38,6 +38,8 @@ Call frame memory layout(RAM):
 +----------------------------------+
 | locals[0..nlocals-1] (csval_t)   |   // VM values
 +----------------------------------+
+| max_operands (csval_t)           | // Taken from Verif
++----------------------------------+
 | noperands (csval_t)              |
 +----------------------------------+
 | operands  (csval_t[])            |   // VM values
@@ -191,7 +193,18 @@ static inline size_t __cs_args_base_idx() {
 // Forward direction
 static inline size_t __cs_locs_base_idx() { return __cs_fp + 1; }
 static inline size_t __cs_noperands_base_idx() {
+  return __cs_locs_base_idx() + __cs_nlocs() + 1 /* max_operands */;
+}
+static inline size_t __cs_maxoperands_base_idx() {
   return __cs_locs_base_idx() + __cs_nlocs();
+}
+static inline size_t __cs_maxoperands() {
+  uint32_t maxop;
+  if (!__cs_nframes)
+    return 0;
+  if (__cs_read_imm_slot(__cs_maxoperands_base_idx(), &maxop))
+    return 0;
+  return maxop;
 }
 static inline size_t __cs_noperands() {
   uint32_t nopnds;
@@ -211,6 +224,8 @@ static error_code_e cs_push_cframe(aint closure, uint32_t ret_off,
                                    uint32_t nargs) {
   if (!((UNBOXED(closure) && UNBOX(closure) == 0) || !UNBOXED(closure)))
     return ERROR_NOT_VALID_CLOSURE;
+
+  RETURN_IF_ERROR(__cs_ensure_capacity(__cs_sp_slots() + 4));
 
   /* Closure segment */
   RETURN_IF_ERROR(__cs_push_slot(csval_from_aint(closure)));
@@ -261,13 +276,26 @@ static error_code_e cs_shutdown(void) {
   free((void *)__gc_stack_top);
   return ERROR_NONE;
 }
-static error_code_e cs_alloc_locals(uint32_t nlocals) {
+static error_code_e cs_alloc_locals(uint32_t nlocals, uint32_t max_operands) {
+  /*
+  Reserve capacity for:
+    +1  nlocals slot
+    +nlocals locals slots
+    +1  max_operands slot
+    +1  noperands slot
+    +max_operands operand slots (pre-reserved)
+*/
+  size_t base = __cs_sp_slots();
+  size_t required = base + 1 + (size_t)nlocals + 2 + (size_t)max_operands;
+  RETURN_IF_ERROR(__cs_ensure_capacity(required));
+
   /* Locals segment */
   RETURN_IF_ERROR(__cs_push_slot(csval_imm(nlocals)));
   __cs_sp_add(nlocals); /* reserve space in frame for nlocals */
 
   /* Operands segment */
-  RETURN_IF_ERROR(__cs_push_slot(csval_imm(0))); // noperands
+  RETURN_IF_ERROR(__cs_push_slot(csval_imm(max_operands))); // max_operands
+  RETURN_IF_ERROR(__cs_push_slot(csval_imm(0)));            // noperands
   return ERROR_NONE;
 }
 static error_code_e cs_pop_frame(uint32_t *ret_off) {
@@ -349,23 +377,34 @@ static void callstack_set_glob(uint32_t index, csval_t value) {
 /* Operands stack */
 static error_code_e callstack_pop_operand(csval_t *ret) {
   uint32_t noperands_ = __cs_noperands();
-  RETURN_IF_ERROR(__cs_pop_slot(ret));
+
+  size_t slot = __cs_operands_base_idx() + (noperands_ - 1);
+  if (ret)
+    *ret = __cs_slot_read(slot);
+
   __cs_write_imm(__cs_noperands_base_idx(), noperands_ - 1);
+  __cs_sp_set(__cs_operands_base_idx() + (noperands_ - 1));
   return ERROR_NONE;
 }
+
 static error_code_e callstack_push_operand(csval_t value) {
   uint32_t noperands_ = __cs_noperands();
-  RETURN_IF_ERROR(__cs_push_slot(value));
+
+  size_t slot = __cs_operands_base_idx() + noperands_;
+  __cs_slot_write(slot, value);
   __cs_write_imm(__cs_noperands_base_idx(), noperands_ + 1);
+
+  __cs_sp_set(__cs_operands_base_idx() + (noperands_ + 1));
   return ERROR_NONE;
 }
+
 static void callstack_pop_n_operands(uint32_t n) {
   uint32_t noperands_ = __cs_noperands();
 
   // Update noperands
   __cs_write_imm(__cs_noperands_base_idx(), noperands_ - n);
 
-  __cs_sp_sub(n);
+  __cs_sp_set(__cs_operands_base_idx() + (noperands_ - n));
 }
 static csval_t callstack_operands_tail_ref(uint32_t n) {
   size_t base = __cs_operands_base_idx();
