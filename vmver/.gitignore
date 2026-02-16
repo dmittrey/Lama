@@ -1,0 +1,5 @@
+vmver
+vmver-asan
+vmver-ubsan
+vmver-msan
+vmver-allsan

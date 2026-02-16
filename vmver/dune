@@ -1,0 +1,20 @@
+(rule
+ (target vmver)
+ (mode
+  (promote (until-clean)))
+ (deps Makefile vmver.c verify.c verify.h state.h callstack.h csval.h error.h ../byterun/bytefile.h ../byterun/bytefile.c ../byterun/disasm.h ../runtime/runtime.a)
+ (action
+  (run make all)))
+
+(rule
+ (target vmver-allsan)
+ (mode
+  (promote (until-clean)))
+ (deps Makefile vmver.c verify.c verify.h state.h callstack.h csval.h error.h ../byterun/bytefile.h ../byterun/bytefile.c ../byterun/disasm.h ../runtime/runtime.a)
+ (action
+  (run make vmver-allsan)))
+
+(cram (deps ../src/Driver.exe ../runtime/Std.i))
+
+(cram (applies_to Sort_perf)
+  (deps performance/Sort.lama performance/Sort.input vmver ../src/Driver.exe ../runtime/Std.i))
