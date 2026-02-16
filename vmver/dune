@@ -2,7 +2,7 @@
  (target vmver)
  (mode
   (promote (until-clean)))
- (deps Makefile vmver.c verify.cc verify_run.h state.h callstack.h csval.h error.h verify.hh ../byterun/bytefile.h ../byterun/bytefile.c ../byterun/disasm.h ../runtime/runtime.a)
+ (deps Makefile vmver.c verify.c verify.h state.h callstack.h csval.h error.h ../byterun/bytefile.h ../byterun/bytefile.c ../byterun/disasm.h ../runtime/runtime.a)
  (action
   (run make all)))
 
@@ -10,7 +10,7 @@
  (target vmver-allsan)
  (mode
   (promote (until-clean)))
- (deps Makefile vmver.c verify.cc verify_run.h state.h callstack.h csval.h error.h verify.hh ../byterun/bytefile.h ../byterun/bytefile.c ../byterun/disasm.h ../runtime/runtime.a)
+ (deps Makefile vmver.c verify.c verify.h state.h callstack.h csval.h error.h ../byterun/bytefile.h ../byterun/bytefile.c ../byterun/disasm.h ../runtime/runtime.a)
  (action
   (run make vmver-allsan)))
 

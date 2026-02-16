@@ -6,7 +6,7 @@
 
 #include "bytefile.h"
 #include "state.h"
-#include "verify_run.h"
+#include "verify.h"
 
 /* High nibble (h) */
 enum op_high {
@@ -598,7 +598,9 @@ static error_code_e op_cjmpnz(FILE *f, char l) {
 
 static error_code_e op_begin(FILE *f, char l) {
   int nargs = bc_read_int();
-  int nlocals = bc_read_int(); // TODO
+  uint32_t raw = (uint32_t)bc_read_int();
+  int nlocals = (int)(raw & 0xFFFF);
+  int sdep = (int)((raw >> 16) & 0xFFFF);
   DBG("BEGIN\t%d %d", nargs, nlocals);
   RETURN_IF_ERROR(cs_alloc_locals(nlocals));
   return ERROR_NONE;
@@ -606,7 +608,9 @@ static error_code_e op_begin(FILE *f, char l) {
 
 static error_code_e op_cbegin(FILE *f, char l) {
   int nargs = bc_read_int();
-  int nlocals = bc_read_int(); // TODO
+  uint32_t raw = (uint32_t)bc_read_int();
+  int nlocals = (int)(raw & 0xFFFF);
+  int sdep = (int)((raw >> 16) & 0xFFFF);
   DBG("CBEGIN\t%d\t%d", nargs, nlocals);
   RETURN_IF_ERROR(cs_alloc_locals((uint32_t)nlocals));
   return ERROR_NONE;
@@ -1065,14 +1069,14 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  if (run_verify(argv[1]) != 0) {
-    fprintf(stderr, "Verification failed!\n");
-    return 1;
-  }
-
   /* Load bytecode */
   __bf = read_file(argv[1]);
   if (!__bf) {
+    return 1;
+  }
+
+  if (verify(__bf) != 0) {
+    fprintf(stderr, "Verification failed!\n");
     return 1;
   }
 
@@ -1106,9 +1110,4 @@ int main(int argc, char *argv[]) {
 - ERROR_OPND_STACK_UNDERFLOW, ERROR_STACK_UNDERFLOW
 - Проверка что взяли в String строку с валидным id
 - ERROR_GLOB_IDX_NEGATIVE, ERROR_GLOB_IDX_OUT_OF_RANGE
-*/
-
-// TODO
-/*
-- Убрать из validate std::to_string
 */

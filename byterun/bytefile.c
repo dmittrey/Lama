@@ -89,15 +89,15 @@ int get_bytes(const bytefile *const bf, uint32_t pos, uint32_t len,
 
 /* Disassembles the bytecode instruction */
 int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
-                            bytecode *ret_opcode, uint32_t *inc,
-                            uint32_t *dec) {
+                            bytecode *ret_opcode, sdepth *inc, sdepth *dec) {
   if ((size_t)pos >= bf->code_size)
     return -1;
-  char *ip = bf->code_ptr + pos;
-  char *ops[] = {
+  unsigned char *ip = (unsigned char *)bf->code_ptr + pos;
+  const char *ops[] = {
       "+", "-", "*", "/", "%", "<", "<=", ">", ">=", "==", "!=", "&&", "!!"};
-  char *pats[] = {"=str", "#string", "#array", "#sexp", "#ref", "#val", "#fun"};
-  char *lds[] = {"LD", "LDA", "ST"};
+  const char *pats[] = {"=str", "#string", "#array", "#sexp",
+                        "#ref", "#val",    "#fun"};
+  const char *lds[] = {"LD", "LDA", "ST"};
 
   unsigned char x = BYTE, h = (x & 0xF0) >> 4, l = x & 0x0F;
 
@@ -405,7 +405,7 @@ int disassemble_instruction(FILE *f, const bytefile *const bf, int pos,
 
   fprintf(f, "\n");
 
-  return ip - bf->code_ptr - pos;
+  return (int)((char *)ip - bf->code_ptr - pos);
 }
 
 /* Disassembles the bytecode pool */
@@ -413,8 +413,7 @@ void disassemble(FILE *f, const bytefile *const bf) {
   bytecode op;
   int pos = 0;
   do {
-    uint32_t inc = 0, dec = 0;
-    int size = disassemble_instruction(f, bf, pos, &op, &inc, &dec);
+    int size = disassemble_instruction(f, bf, pos, &op, NULL, NULL);
     if (op == STOP) {
       break;
     }

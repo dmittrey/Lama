@@ -73,9 +73,13 @@ typedef enum bytecode {
   STOP = 0xFF
 } bytecode;
 
+// Stack depth type
+// Need to write in 16bit contained in [c]begin second arg => 16 bit width
+typedef uint16_t sdepth;
+
 int disassemble_instruction(FILE *f, const struct bytefile *const bf,
-                            int offset, bytecode *const ret_opcode,
-                            uint32_t *inc, uint32_t *dec);
+                            int offset, bytecode *const ret_opcode, sdepth *inc,
+                            sdepth *dec);
 
 #ifdef __cplusplus
 }

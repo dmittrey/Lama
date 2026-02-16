@@ -2,14 +2,30 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define INT (ip += sizeof(int), *(int *)(ip - sizeof(int)))
-#define BYTE                                                                   \
-  (ip += sizeof(unsigned char), *(unsigned char *)(ip - sizeof(unsigned char)))
+// Bytecode stream is byte-aligned; unaligned int loads via (int*) are UB and
+// trip UBSan.
+static inline unsigned char bytefile_read_u8(unsigned char **ip) {
+  unsigned char v;
+  memcpy(&v, *ip, sizeof(v));
+  *ip += sizeof(v);
+  return v;
+}
+
+static inline int bytefile_read_i32(unsigned char **ip) {
+  int v;
+  memcpy(&v, *ip, sizeof(v));
+  *ip += sizeof(v);
+  return v;
+}
+
+#define BYTE (bytefile_read_u8(&ip))
+#define INT (bytefile_read_i32(&ip))
 
 /* The unpacked representation of bytecode file */
 typedef struct bytefile {
@@ -41,23 +57,33 @@ static inline size_t get_code_size(const bytefile *const f) {
   return f->code_size;
 }
 static inline int32_t get_arg(const bytefile *const bf, int pos) {
-  char *ip = bf->code_ptr + pos;
+  unsigned char *ip = (unsigned char *)bf->code_ptr + pos;
   (void)(BYTE); /* skip opcode byte */
   return (int32_t)INT;
 }
 static inline int32_t get_arg2(const bytefile *const bf, int pos) {
-  char *ip = bf->code_ptr + pos;
+  unsigned char *ip = (unsigned char *)bf->code_ptr + pos;
   (void)(BYTE); /* skip opcode byte */
   (void)(INT);
   return (int32_t)INT;
 }
+/*
+Prev layout:
+| opcode (8 bits) | args_cnt (32 bits) | locals_cnt (32 bits)                         |
+| opcode (8 bits) | args_cnt (32 bits) | stack_depth (16 bits) | locals_cnt (16 bits) |
+*/
 static inline void set_arg2_bighalf(const bytefile *const bf, int pos,
                                     uint16_t val) {
-  char *ip = bf->code_ptr + pos;
+  unsigned char *ip = (unsigned char *)bf->code_ptr + pos;
   (void)(BYTE); /* skip opcode byte */
   (void)(INT);
-  memcpy(ip, &val, sizeof(uint16_t));
+
+  uint32_t raw;
+  memcpy(&raw, ip, sizeof(raw));
+  raw = (raw & 0x0000FFFFu) | ((uint32_t)val << 16);
+  memcpy(ip, &raw, sizeof(raw));
 }
+
 static inline char *get_code_ptr(bytefile *f) { return f->code_ptr; }
 static inline int get_global_area_size(const bytefile *const f) {
   return f->global_area_size;
