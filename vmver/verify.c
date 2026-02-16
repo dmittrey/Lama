@@ -256,8 +256,16 @@ int verify(bytefile *bytefile) {
   bool *reachable = (bool *)calloc(code_size, sizeof(bool)); // 1X file size
   sdepth *stack_size =
       (sdepth *)calloc(code_size, sizeof(sdepth)); // 2X file size
+  if (!stack_size) {
+    fprintf(stderr, "Not enough memory for stack_size\n");
+    return 1;
+  }
   sdepth *max_depth =
       (sdepth *)calloc(code_size, sizeof(sdepth)); // 2X file size
+  if (!max_depth) {
+    fprintf(stderr, "Not enough memory for max_depth\n");
+    return 1;
+  }
   symoff *func_of =
       (symoff *)malloc(code_size * sizeof(symoff)); // 4X file size
   if (!func_of) {
@@ -269,8 +277,16 @@ int verify(bytefile *bytefile) {
   }
   sdepth *delta_size =
       (sdepth *)calloc(code_size, sizeof(sdepth)); // 2X file size
+  if (!delta_size) {
+    fprintf(stderr, "Not enough memory for delta_size\n");
+    return 1;
+  }
   stdump *types =
       (stdump *)calloc(code_size, sizeof(stdump)); // 2X file size(cause packed)
+  if (!types) {
+    fprintf(stderr, "Not enough memory for types\n");
+    return 1;
+  }
   workset = (symoff *)calloc(code_size, sizeof(symoff)); // 4X file size
   workset_head = workset - 1;
 
