@@ -1,5 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include "../runtime/gc.h"
 #include "../runtime/runtime.h"
@@ -1063,6 +1065,12 @@ done:
   DBG("<done>\n");
 }
 
+static double now_ms(void) {
+  struct timespec t;
+  clock_gettime(CLOCK_MONOTONIC, &t);
+  return t.tv_sec * 1000.0 + t.tv_nsec / 1e6;
+}
+
 int main(int argc, char *argv[]) {
   if (argc < 2) {
     fprintf(stderr, "Usage: %s <bytecode_file>\n", argv[0]);
@@ -1075,21 +1083,29 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  // Will init callstack
+  double t0 = now_ms();
   RETURN_IF_ERROR(verify(__bf));
+  double t1 = now_ms();
 
   /* Virtual regs */
   __ip = __bf->code_ptr;
 
   /* Interpret bytecode */
   error_code_e error_code = ERROR_NONE;
+  double t2 = now_ms();
   interpret_bc(stdout, &error_code);
+  double t3 = now_ms();
   if (error_code != ERROR_NONE && error_code != ERROR_STOP) {
     if (error_code == ERROR_REACHED_MAX_DEPTH)
       fprintf(stderr, "Error: operand stack exceeded max depth\n");
     else
       fprintf(stderr, "Error: %d\n", error_code);
     return 1;
+  }
+
+  if (getenv("LAMA_TIMING")) {
+    fprintf(stderr, "verification: %.3f ms\n", t1 - t0);
+    fprintf(stderr, "execution: %.3f ms\n", t3 - t2);
   }
 
   /* Cleanup */
