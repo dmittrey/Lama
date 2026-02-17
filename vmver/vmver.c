@@ -1085,7 +1085,10 @@ int main(int argc, char *argv[]) {
   error_code_e error_code = ERROR_NONE;
   interpret_bc(stdout, &error_code);
   if (error_code != ERROR_NONE && error_code != ERROR_STOP) {
-    fprintf(stderr, "Error: %d\n", error_code);
+    if (error_code == ERROR_REACHED_MAX_DEPTH)
+      fprintf(stderr, "Error: operand stack exceeded max depth\n");
+    else
+      fprintf(stderr, "Error: %d\n", error_code);
     return 1;
   }
 

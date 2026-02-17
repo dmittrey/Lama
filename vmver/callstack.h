@@ -390,6 +390,9 @@ static error_code_e callstack_pop_operand(csval_t *ret) {
 }
 static error_code_e callstack_push_operand(csval_t value) {
   uint32_t noperands_ = __cs_noperands();
+  size_t max_depth = cs_max_depth();
+  if (max_depth > 0 && noperands_ >= max_depth)
+    return ERROR_REACHED_MAX_DEPTH;
   RETURN_IF_ERROR(__cs_push_slot(value));
   __cs_write_imm(__cs_noperands_base_idx(), noperands_ + 1);
   return ERROR_NONE;
