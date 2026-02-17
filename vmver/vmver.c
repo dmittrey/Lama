@@ -894,9 +894,8 @@ void interpret_bc(FILE *f, error_code_e *error_code) {
   char *base_ip = __ip;
 
   for (;;) {
-    char x = bc_read_byte();
-    char h = (x & 0xF0) >> 4;
-    char l = x & 0x0F;
+    unsigned char x = bytefile_read_u8((unsigned char **)&__ip),
+                  h = (x & 0xF0) >> 4, l = x & 0x0F;
 
     DBG("0x%.8lx:\t", __ip - base_ip - 1);
     current_h = h;
